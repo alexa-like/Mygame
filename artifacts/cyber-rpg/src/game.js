@@ -8,6 +8,13 @@ const app = document.getElementById("app");
 
 const AVATARS = ["cyan", "pink", "purple", "green", "yellow", "red"];
 const HOME_CITY = "neo_torin";
+const GENDERS = [
+  { id: "", label: "—" },
+  { id: "male", label: "Male" },
+  { id: "female", label: "Female" },
+  { id: "other", label: "Other" },
+  { id: "prefer_not", label: "Prefer not to say" },
+];
 
 const state = {
   me: null,
@@ -24,19 +31,24 @@ const state = {
   authMode: "login",
   authError: "",
   online: new Set(),
-  // tab data caches
   crimes: [],
   jobs: [],
   missions: [],
   shop: { city: null, stock: [] },
   inventory: [],
   viewedPlayer: null,
-  selectedAction: null, // for "next action" suggestion
+  // Trade tab
+  trades: { incoming: [], outgoing: [], history: [] },
+  tradeDraft: null, // { toUserId, toName, offerMoney, wantMoney, offerItems[], wantItems[] }
+  // AI helper
+  aiHistory: [], // [{role:'user'|'bot', text}]
+  aiBusy: false,
+  // Admin
+  admin: { users: [], focusUser: null },
 };
 
 let countdownTimer = null;
 
-// --- Helpers ---
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
@@ -45,22 +57,30 @@ function escapeHtml(s) {
 function fmtTime(ts) { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
 function fmtDate(ts) { return new Date(ts).toLocaleDateString(); }
 function fmtSecs(s) {
-  if (s <= 0) return "0s";
+  if (s <= 0) return "ready";
   const m = Math.floor(s / 60), sec = s % 60;
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
-function avatarHtml(avatarKey, name, size = "") {
-  const initial = (name || "?").slice(0, 2).toUpperCase();
-  return `<div class="avatar ${size} ${avatarKey || "purple"}">${escapeHtml(initial)}</div>`;
+function avatarHtml(p, size = "") {
+  // p can be a user object or just an avatar key (legacy)
+  if (typeof p === "string") {
+    return `<div class="avatar ${size} ${p || "purple"}">??</div>`;
+  }
+  const name = p?.username || "?";
+  const initial = name.slice(0, 2).toUpperCase();
+  if (p?.avatarUrl) {
+    return `<div class="avatar ${size} img"><img src="${escapeHtml(p.avatarUrl)}" alt="${escapeHtml(name)}" onerror="this.parentNode.innerHTML='${initial}'" /></div>`;
+  }
+  return `<div class="avatar ${size} ${p?.avatar || "purple"}">${escapeHtml(initial)}</div>`;
 }
 function pushLog(text, type = "info") {
   state.log.unshift({ text, type, t: Date.now() });
   if (state.log.length > 30) state.log.length = 30;
 }
-function xpForNext(level) { return Math.round(80 * Math.pow(1.45, level - 1)); }
+function xpForNext(level) { return Math.round(30 * Math.pow(1.25, level - 1)); }
 function cityName(id) { return state.cities.find(c => c.id === id)?.name || id; }
 function cityFlag(id) { return state.cities.find(c => c.id === id)?.flag || ""; }
-function diffClass(d) { return `diff-${d}`; }
+function isStaff() { return state.me?.role === "admin" || state.me?.role === "dev"; }
 
 function showToast(text, type = "info") {
   let container = document.getElementById("toast-container");
@@ -78,7 +98,6 @@ function showToast(text, type = "info") {
   setTimeout(() => t.remove(), 3400);
 }
 
-// --- Boot ---
 async function boot() {
   if (getToken()) {
     try {
@@ -115,7 +134,6 @@ async function refreshMe() {
   } catch {}
 }
 
-// --- Countdown timer for status (travel, hospital, jail) and regen UI ---
 function startCountdownLoop() {
   if (countdownTimer) clearInterval(countdownTimer);
   countdownTimer = setInterval(() => {
@@ -126,7 +144,12 @@ function startCountdownLoop() {
       const target = Number(el.dataset.countdownTo);
       const remain = Math.max(0, Math.ceil((target - Date.now()) / 1000));
       el.textContent = fmtSecs(remain);
-      if (remain === 0) needsRefresh = true;
+      if (remain === 0 && el.dataset.countdownAuto !== "no") needsRefresh = true;
+      if (remain === 0) {
+        // Enable any "claim" button paired with this countdown
+        const btn = el.closest(".mission-card")?.querySelector("[data-claim]");
+        if (btn) btn.disabled = false;
+      }
     });
     if (needsRefresh) refreshAndRerender();
   }, 1000);
@@ -137,7 +160,6 @@ async function refreshAndRerender() {
   render();
 }
 
-// --- WS handler ---
 onWs((evt) => {
   if (evt.kind === "world_msg") {
     state.worldMessages.push(evt.message);
@@ -170,19 +192,22 @@ function scrollChatToBottom() {
   setTimeout(() => {
     const el = document.getElementById("chat-messages");
     if (el) el.scrollTop = el.scrollHeight;
+    const ai = document.getElementById("ai-messages");
+    if (ai) ai.scrollTop = ai.scrollHeight;
   }, 30);
 }
 
 // --- AUTH ---
 function renderAuth() {
+  const isReg = state.authMode === "register";
   app.innerHTML = `
     <div class="auth-screen">
       <h1 class="title">Neon Streets</h1>
       <div class="subtitle">// MULTIPLAYER CYBER RPG //</div>
       <div class="panel auth-card">
         <div class="auth-toggle">
-          <button class="${state.authMode === 'login' ? 'active' : ''}" data-mode="login">Sign In</button>
-          <button class="${state.authMode === 'register' ? 'active' : ''}" data-mode="register">Register</button>
+          <button class="${!isReg ? 'active' : ''}" data-mode="login">Sign In</button>
+          <button class="${isReg ? 'active' : ''}" data-mode="register">Register</button>
         </div>
         <div class="field">
           <label class="label">Callsign</label>
@@ -190,9 +215,22 @@ function renderAuth() {
         </div>
         <div class="field">
           <label class="label">PIN (4-8 digits)</label>
-          <input class="input" id="auth-pin" type="password" inputmode="numeric" placeholder="••••" maxlength="8" autocomplete="${state.authMode === 'login' ? 'current-password' : 'new-password'}" />
+          <input class="input" id="auth-pin" type="password" inputmode="numeric" placeholder="••••" maxlength="8" autocomplete="${isReg ? 'new-password' : 'current-password'}" />
         </div>
-        <button class="btn" id="auth-submit" style="width: 100%;">${state.authMode === 'login' ? 'Jack In' : 'Create Operative'}</button>
+        ${isReg ? `
+          <div class="field">
+            <label class="label">Email <span class="muted small">(optional)</span></label>
+            <input class="input" id="auth-email" type="email" placeholder="you@gmail.com" autocomplete="email" />
+            <div class="muted small" style="margin-top:6px;">Heads-up: confirmation emails aren't enabled on the free tier, so we just save it for now.</div>
+          </div>
+          <div class="field">
+            <label class="label">Gender</label>
+            <select class="input" id="auth-gender">
+              ${GENDERS.map(g => `<option value="${g.id}">${g.label}</option>`).join("")}
+            </select>
+          </div>
+        ` : ""}
+        <button class="btn" id="auth-submit" style="width: 100%;">${isReg ? 'Create Operative' : 'Jack In'}</button>
         <div class="error-msg">${escapeHtml(state.authError)}</div>
       </div>
     </div>
@@ -206,9 +244,15 @@ function renderAuth() {
     if (!username || !pin) { state.authError = "Username and PIN required."; render(); return; }
     state.authError = "";
     try {
-      const { user } = state.authMode === 'login'
-        ? await api.login(username, pin)
-        : await api.register(username, pin);
+      let res;
+      if (isReg) {
+        const email = document.getElementById("auth-email")?.value.trim() || "";
+        const gender = document.getElementById("auth-gender")?.value || "";
+        res = await api.register({ username, pin, email, gender });
+      } else {
+        res = await api.login(username, pin);
+      }
+      const user = res.user;
       setToken(user.token);
       state.me = user;
       const cities = await api.cities();
@@ -216,13 +260,14 @@ function renderAuth() {
       connectWs();
       await loadInitialData();
       state.tab = "home";
-      pushLog(`${user.username} jacked into the grid.`, "info");
+      pushLog(`${user.username} jacked into the grid${user.role === "dev" ? " as the DEVELOPER" : ""}.`, "info");
+      if (res.emailVerificationNote) showToast(res.emailVerificationNote, "info");
       render();
     } catch (e) { state.authError = e.message; render(); }
   };
   document.getElementById("auth-submit").onclick = submit;
-  ["auth-username", "auth-pin"].forEach(id => {
-    document.getElementById(id).addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  ["auth-username", "auth-pin", "auth-email"].forEach(id => {
+    document.getElementById(id)?.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
   });
   document.getElementById("auth-username").focus();
 }
@@ -255,9 +300,9 @@ function statusBanner() {
   return "";
 }
 
-// --- TOPBAR ---
 function topbarHtml() {
   const me = state.me;
+  const tag = me.role === "dev" ? '<span class="role-tag dev">DEV</span>' : me.role === "admin" ? '<span class="role-tag admin">ADMIN</span>' : "";
   return `
     <div class="topbar">
       <div class="brand">
@@ -265,9 +310,9 @@ function topbarHtml() {
         <div class="subtitle">${cityFlag(me.location)} ${escapeHtml(cityName(me.location))} · L${me.level}</div>
       </div>
       <div class="me">
-        ${avatarHtml(me.avatar, me.username)}
+        ${avatarHtml(me)}
         <div>
-          <div class="who">${escapeHtml(me.username)}</div>
+          <div class="who">${escapeHtml(me.username)} ${tag}</div>
           <div class="mini-stats">
             <span class="m">$<b>${me.money.toLocaleString()}</b></span>
             <span class="r">RES<b>${me.respect}</b></span>
@@ -279,7 +324,6 @@ function topbarHtml() {
   `;
 }
 
-// --- Vitals bars (always visible) ---
 function vitalsBarsHtml() {
   const me = state.me;
   const xpNeed = xpForNext(me.level);
@@ -303,9 +347,9 @@ function vitalBar(label, val, max, cls) {
   `;
 }
 
-// --- TABS ---
 function tabsHtml() {
   const totalPrivateUnread = Object.values(state.unread.private).reduce((a, b) => a + b, 0);
+  const pendingTrades = state.trades.incoming.length;
   const tabs = [
     { id: "home",     label: "Home" },
     { id: "crimes",   label: "Crimes" },
@@ -314,10 +358,13 @@ function tabsHtml() {
     { id: "missions", label: "Missions" },
     { id: "travel",   label: "Travel" },
     { id: "items",    label: "Items" },
+    { id: "trade",    label: "Trade", badge: pendingTrades || null },
     { id: "chat",     label: "Chat", badge: (state.unread.world + totalPrivateUnread) || null },
+    { id: "helper",   label: "Helper" },
     { id: "players",  label: "Players" },
     { id: "profile",  label: "Profile" },
   ];
+  if (isStaff()) tabs.push({ id: "admin", label: state.me.role === "dev" ? "Dev" : "Admin" });
   return `
     <div class="tabs">
       ${tabs.map(t => `
@@ -329,10 +376,8 @@ function tabsHtml() {
   `;
 }
 
-// --- HOME ---
 function renderHome() {
   const me = state.me;
-  const xpNeed = xpForNext(me.level);
   return `
     <div class="panel">
       <div class="panel-title">Vitals</div>
@@ -366,6 +411,8 @@ function renderHome() {
         <button class="btn green" data-go="jobs">💼 Jobs</button>
         <button class="btn yellow" data-go="missions">🎯 Missions</button>
         <button class="btn orange" data-go="travel">✈️ Travel</button>
+        <button class="btn cyan" data-go="trade">💱 Trade</button>
+        <button class="btn" data-go="helper">🤖 Helper Bot</button>
         <button class="btn ghost" data-act="heal" ${me.money < 50 + me.level * 10 || me.health >= me.maxHealth ? 'disabled' : ''}>🏥 Heal ($${50 + me.level * 10})</button>
       </div>
     </div>
@@ -392,13 +439,13 @@ async function doSimpleAction(act) {
 }
 
 function handleResult(r) {
-  state.me = r.user;
-  pushLog(r.message, r.type);
+  if (r.user) state.me = r.user;
+  if (r.message) pushLog(r.message, r.type);
   if (r.leveled) {
     pushLog(`>>> LEVEL UP! Now level ${r.user.level}.`, "levelup");
     showToast(`LEVEL UP! → ${r.user.level}`, "levelup");
   }
-  showToast(r.message, r.type);
+  if (r.message) showToast(r.message, r.type);
   render();
 }
 
@@ -463,7 +510,7 @@ function renderGym() {
         <span class="spacer"></span>
         <span class="muted small">Energy: <b style="color:var(--neon-purple)">${me.energy}/${me.maxEnergy}</b> · Happy: <b style="color:var(--neon-yellow)">${me.happy}/${me.maxHappy}</b></span>
       </div>
-      <div class="muted small" style="margin-bottom:14px;">Each train costs <b>5 energy</b> + <b>5 happy</b>. Higher happy = bigger gains. Buy Mood Pills to keep happy up.</div>
+      <div class="muted small" style="margin-bottom:14px;">Each train costs <b>5 energy</b> + <b>5 happy</b>. Higher happy = bigger gains.</div>
       <div class="gym-grid">
         ${stats.map(s => `
           <div class="gym-card">
@@ -516,18 +563,24 @@ async function doJob(id) {
   catch (e) { showToast(e.message, "fail"); }
 }
 
-// --- MISSIONS ---
+// --- MISSIONS (time-gated) ---
 async function loadMissions() { try { state.missions = (await api.missions()).missions; } catch {} }
 function renderMissions() {
   return `
     <div class="panel">
       <div class="panel-title">Active Missions
         <span class="spacer"></span>
-        <button class="btn ghost sm" id="refresh-missions">Refresh</button>
+        <button class="btn ghost sm" id="refresh-missions">Refresh Available</button>
       </div>
+      <div class="muted small" style="margin-bottom:12px;">Start a mission to spend energy and start the clock. When the timer ends, hit <b>Claim</b> to roll for rewards. Hard contracts pay big but fail more.</div>
       ${state.missions.length === 0
-        ? '<div class="muted" style="text-align:center; padding: 20px;">No missions available. Refresh to pull new contracts.</div>'
-        : state.missions.map(m => `
+        ? '<div class="muted" style="text-align:center; padding: 20px;">No missions. Refresh to pull new contracts.</div>'
+        : state.missions.map(m => {
+          const status = m.status;
+          const completesAt = m.completesAt ? new Date(m.completesAt).getTime() : 0;
+          const remaining = completesAt ? Math.max(0, Math.ceil((completesAt - Date.now()) / 1000)) : 0;
+          const ready = status === "in_progress" && remaining === 0;
+          return `
           <div class="mission-card">
             <div class="head">
               <div>
@@ -538,24 +591,39 @@ function renderMissions() {
             <div class="desc">${escapeHtml(m.description)}</div>
             <div class="meta">
               <span class="energy">EN <b>-${m.energyCost}</b></span>
+              <span>Time <b>${fmtSecs(m.durationSeconds)}</b></span>
               <span class="money">REWARD <b>$${m.moneyReward}</b></span>
               <span class="xp">XP <b>+${m.xpReward}</b></span>
             </div>
             <div class="mission-actions">
-              <button class="btn sm" data-mission="${m.id}" ${state.me.energy < m.energyCost ? 'disabled' : ''}>Accept</button>
+              ${status === "available" ? `
+                <button class="btn sm" data-start="${m.id}" ${state.me.energy < m.energyCost ? 'disabled' : ''}>Start (${m.energyCost} EN)</button>
+              ` : status === "in_progress" ? `
+                <span class="muted small">${ready ? "✅ Ready to claim" : "In progress…"}</span>
+                <span class="muted small" data-countdown-to="${completesAt}" data-countdown-auto="no">${fmtSecs(remaining)}</span>
+                <button class="btn yellow sm" data-claim="${m.id}" ${ready ? '' : 'disabled'}>Claim Reward</button>
+                <button class="btn ghost sm" data-abort="${m.id}">Abort</button>
+              ` : ``}
             </div>
           </div>
-        `).join("")
+          `;
+        }).join("")
       }
     </div>
   `;
 }
-async function takeMission(id) {
-  try {
-    const r = await api.completeMission(id);
-    state.missions = r.missions;
-    handleResult(r);
-  } catch (e) { showToast(e.message, "fail"); }
+async function startMission(id) {
+  try { const r = await api.startMission(id); state.missions = r.missions; handleResult(r); }
+  catch (e) { showToast(e.message, "fail"); }
+}
+async function claimMission(id) {
+  try { const r = await api.claimMission(id); state.missions = r.missions; handleResult(r); }
+  catch (e) { showToast(e.message, "fail"); }
+}
+async function abortMission(id) {
+  if (!confirm("Abort this mission? You won't get the energy back.")) return;
+  try { const r = await api.abortMission(id); state.missions = r.missions; handleResult(r); }
+  catch (e) { showToast(e.message, "fail"); }
 }
 async function refreshMissions() {
   try { state.missions = (await api.refreshMissions()).missions; render(); }
@@ -600,13 +668,16 @@ async function doTravel(city) {
   catch (e) { showToast(e.message, "fail"); }
 }
 
-// --- ITEMS / SHOP / INVENTORY ---
+// --- ITEMS ---
 async function loadItemsTab() {
   try {
     const [shop, inv] = await Promise.all([api.shop(), api.inventory()]);
     state.shop = shop;
     state.inventory = inv.inventory;
   } catch {}
+}
+function itemIcon(cat) {
+  return cat === "weapon" ? "⚔️" : cat === "armor" ? "🛡️" : cat === "consumable" ? "💊" : "📦";
 }
 function renderItems() {
   const me = state.me;
@@ -668,9 +739,6 @@ function renderItems() {
     </div>
   `;
 }
-function itemIcon(cat) {
-  return cat === "weapon" ? "⚔️" : cat === "armor" ? "🛡️" : cat === "consumable" ? "💊" : "📦";
-}
 async function doBuy(id) {
   try { handleResult(await api.buy(id, 1)); await loadItemsTab(); render(); }
   catch (e) { showToast(e.message, "fail"); }
@@ -682,6 +750,234 @@ async function doSell(id) {
 async function doUse(id) {
   try { handleResult(await api.useItem(id)); await loadItemsTab(); render(); }
   catch (e) { showToast(e.message, "fail"); }
+}
+
+// --- TRADE ---
+async function loadTradeTab() {
+  try {
+    const [t, inv] = await Promise.all([api.trades(), api.inventory()]);
+    state.trades = t;
+    state.inventory = inv.inventory;
+  } catch {}
+}
+function renderTradeItemsList(list) {
+  if (!list || list.length === 0) return '<span class="muted small">nothing</span>';
+  return list.map(it => {
+    const meta = state.inventory.find(r => r.itemId === it.itemId)?.item;
+    const name = meta?.name || it.itemId;
+    return `<span class="trade-chip">${escapeHtml(name)} ×${it.quantity}</span>`;
+  }).join(" ");
+}
+function renderTradeRow(t, side) {
+  const offerName = side === "incoming" ? state.players.find(p => p.id === t.fromUserId)?.username : state.players.find(p => p.id === t.toUserId)?.username;
+  return `
+    <div class="trade-card">
+      <div class="head">
+        <div>
+          <b>${side === "incoming" ? "From" : "To"}: ${escapeHtml(offerName || "?")}</b>
+          <div class="muted small">${fmtTime(t.createdAt)} · ${escapeHtml(t.message || "")}</div>
+        </div>
+      </div>
+      <div class="trade-rows">
+        <div class="trade-side">
+          <div class="muted small">They give${side === "incoming" ? "" : " (you give)"}</div>
+          <div>${t.offerMoney > 0 ? `<span class="trade-chip money">$${t.offerMoney.toLocaleString()}</span>` : ""}</div>
+          <div>${renderTradeItemsList(t.offerItems)}</div>
+        </div>
+        <div class="trade-arrow">⇄</div>
+        <div class="trade-side">
+          <div class="muted small">You give${side === "incoming" ? "" : " (they give)"}</div>
+          <div>${t.wantMoney > 0 ? `<span class="trade-chip money">$${t.wantMoney.toLocaleString()}</span>` : ""}</div>
+          <div>${renderTradeItemsList(t.wantItems)}</div>
+        </div>
+      </div>
+      <div class="trade-actions">
+        ${side === "incoming"
+          ? `<button class="btn green sm" data-trade-accept="${t.id}">Accept</button>
+             <button class="btn ghost sm" data-trade-reject="${t.id}">Reject</button>`
+          : `<button class="btn ghost sm" data-trade-reject="${t.id}">Cancel</button>`}
+      </div>
+    </div>
+  `;
+}
+function renderTrade() {
+  const draft = state.tradeDraft;
+  return `
+    ${draft ? `
+    <div class="panel">
+      <div class="panel-title">New Trade Proposal → ${escapeHtml(draft.toName)}</div>
+      <div class="trade-builder">
+        <div>
+          <div class="label">You offer:</div>
+          <input class="input" type="number" min="0" placeholder="Money to send" value="${draft.offerMoney}" id="trade-offer-money" />
+          <div class="muted small" style="margin: 8px 0;">Your inventory:</div>
+          <div class="trade-inv-list">
+            ${state.inventory.length === 0 ? '<span class="muted small">empty</span>' :
+              state.inventory.map(r => {
+                const inDraft = draft.offerItems.find(x => x.itemId === r.itemId)?.quantity || 0;
+                return `
+                  <div class="trade-inv-row">
+                    <span>${escapeHtml(r.item?.name || r.itemId)} (×${r.quantity})</span>
+                    <input class="input sm" type="number" min="0" max="${r.quantity}" value="${inDraft}" data-offer-item="${r.itemId}" style="width:80px;" />
+                  </div>`;
+              }).join("")}
+          </div>
+        </div>
+        <div>
+          <div class="label">You want:</div>
+          <input class="input" type="number" min="0" placeholder="Money to receive" value="${draft.wantMoney}" id="trade-want-money" />
+          <div class="muted small" style="margin: 8px 0;">Items you want (paste item id and qty):</div>
+          <div class="trade-want-list">
+            ${draft.wantItems.map((w, i) => `
+              <div class="trade-inv-row">
+                <input class="input sm" data-want-id="${i}" value="${escapeHtml(w.itemId)}" placeholder="item-id" />
+                <input class="input sm" type="number" min="1" data-want-qty="${i}" value="${w.quantity}" style="width:80px;" />
+                <button class="btn ghost sm" data-want-remove="${i}">×</button>
+              </div>
+            `).join("")}
+          </div>
+          <button class="btn ghost sm" id="add-want-row">+ Add wanted item</button>
+          <div class="muted small" style="margin-top:6px;">Tip: see item IDs in your inventory list (under each item, or ask the Helper).</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px; gap:8px;">
+        <input class="input" id="trade-message" placeholder="Optional message…" maxlength="200" value="${escapeHtml(draft.message || "")}" />
+        <button class="btn" id="trade-send">Send Proposal</button>
+        <button class="btn ghost" id="trade-cancel-draft">Cancel</button>
+      </div>
+    </div>` : ""}
+
+    <div class="panel">
+      <div class="panel-title">Incoming Trades <span class="spacer"></span><span class="muted small">${state.trades.incoming.length}</span></div>
+      ${state.trades.incoming.length === 0 ? '<div class="muted">Nothing waiting on you.</div>' :
+        state.trades.incoming.map(t => renderTradeRow(t, "incoming")).join("")}
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Outgoing Trades <span class="spacer"></span><span class="muted small">${state.trades.outgoing.length}</span></div>
+      ${state.trades.outgoing.length === 0 ? '<div class="muted">No outgoing proposals.</div>' :
+        state.trades.outgoing.map(t => renderTradeRow(t, "outgoing")).join("")}
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Recent History</div>
+      ${state.trades.history.length === 0 ? '<div class="muted">No history yet.</div>' :
+        `<div class="trade-history">${state.trades.history.map(t => `
+          <div class="trade-history-row">
+            <span class="trade-status ${t.status}">${t.status.toUpperCase()}</span>
+            <span class="muted small">${fmtTime(t.createdAt)}</span>
+            <span>${t.fromUserId === state.me.id ? "→" : "←"} ${escapeHtml((t.fromUserId === state.me.id ? state.players.find(p => p.id === t.toUserId)?.username : state.players.find(p => p.id === t.fromUserId)?.username) || "?")}</span>
+          </div>`).join("")}</div>`}
+    </div>
+  `;
+}
+function setupTradeHandlers() {
+  app.querySelectorAll("[data-trade-accept]").forEach(el => {
+    el.onclick = async () => {
+      try { handleResult(await api.acceptTrade(el.dataset.tradeAccept)); await loadTradeTab(); render(); }
+      catch (e) { showToast(e.message, "fail"); }
+    };
+  });
+  app.querySelectorAll("[data-trade-reject]").forEach(el => {
+    el.onclick = async () => {
+      try { await api.rejectTrade(el.dataset.tradeReject); await loadTradeTab(); render(); showToast("Trade closed.", "info"); }
+      catch (e) { showToast(e.message, "fail"); }
+    };
+  });
+
+  if (!state.tradeDraft) return;
+  document.getElementById("trade-cancel-draft").onclick = () => { state.tradeDraft = null; render(); };
+  document.getElementById("add-want-row").onclick = () => {
+    state.tradeDraft.wantItems.push({ itemId: "", quantity: 1 });
+    render();
+  };
+  document.querySelectorAll("[data-want-remove]").forEach(el => {
+    el.onclick = () => { state.tradeDraft.wantItems.splice(Number(el.dataset.wantRemove), 1); render(); };
+  });
+  document.getElementById("trade-send").onclick = async () => {
+    const draft = state.tradeDraft;
+    draft.offerMoney = Math.max(0, Number(document.getElementById("trade-offer-money").value || 0));
+    draft.wantMoney = Math.max(0, Number(document.getElementById("trade-want-money").value || 0));
+    draft.message = document.getElementById("trade-message").value;
+    // collect offer items
+    const offer = [];
+    document.querySelectorAll("[data-offer-item]").forEach(el => {
+      const q = Number(el.value || 0);
+      if (q > 0) offer.push({ itemId: el.dataset.offerItem, quantity: q });
+    });
+    // collect want items
+    const want = [];
+    document.querySelectorAll("[data-want-id]").forEach((el, i) => {
+      const id = el.value.trim();
+      const q = Number(document.querySelector(`[data-want-qty="${i}"]`)?.value || 0);
+      if (id && q > 0) want.push({ itemId: id, quantity: q });
+    });
+    try {
+      await api.createTrade({
+        toUserId: draft.toUserId,
+        offerMoney: draft.offerMoney, offerItems: offer,
+        wantMoney: draft.wantMoney, wantItems: want,
+        message: draft.message,
+      });
+      state.tradeDraft = null;
+      await loadTradeTab();
+      showToast("Trade proposal sent.", "success");
+      render();
+    } catch (e) { showToast(e.message, "fail"); }
+  };
+}
+
+// --- HELPER (AI) ---
+function renderHelper() {
+  return `
+    <div class="panel ai-panel">
+      <div class="panel-title">🤖 Choomba — Game Helper Bot
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="ai-clear">Clear chat</button>
+      </div>
+      <div class="muted small" style="margin-bottom:10px;">Ask anything about how this game works — crimes, gym, travel, missions, items, trade, PvP. The bot only answers game questions.</div>
+      <div class="ai-messages" id="ai-messages">
+        ${state.aiHistory.length === 0
+          ? '<div class="ai-msg bot">Yo choom. Need a hand with the streets? Ask me about crimes, gym training, travel routes, missions, items, or PvP.</div>'
+          : state.aiHistory.map(m => `<div class="ai-msg ${m.role}">${escapeHtml(m.text)}</div>`).join("")}
+        ${state.aiBusy ? '<div class="ai-msg bot ai-typing">…</div>' : ''}
+      </div>
+      <div class="chat-input-row">
+        <input class="input" id="ai-input" placeholder="Ask about the game…" maxlength="500" ${state.aiBusy ? 'disabled' : ''} />
+        <button class="btn" id="ai-send" ${state.aiBusy ? 'disabled' : ''}>Ask</button>
+      </div>
+    </div>
+  `;
+}
+function setupHelperHandlers() {
+  const input = document.getElementById("ai-input");
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text || state.aiBusy) return;
+    state.aiHistory.push({ role: "user", text });
+    state.aiBusy = true;
+    input.value = "";
+    render();
+    try {
+      const r = await api.askAi(text);
+      state.aiHistory.push({ role: "bot", text: r.answer });
+    } catch (e) {
+      state.aiHistory.push({ role: "bot", text: "⚠️ " + e.message });
+    } finally {
+      state.aiBusy = false;
+      render();
+      scrollChatToBottom();
+    }
+  };
+  document.getElementById("ai-send").onclick = send;
+  input?.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+  input?.focus();
+  document.getElementById("ai-clear").onclick = async () => {
+    try { await api.clearAi(); } catch {}
+    state.aiHistory = [];
+    render();
+  };
+  scrollChatToBottom();
 }
 
 // --- CHAT ---
@@ -742,9 +1038,7 @@ function renderChat() {
 }
 function setupChatHandlers() {
   app.querySelectorAll("[data-channel]").forEach(el => { el.onclick = () => openChat(el.dataset.channel); });
-  app.querySelectorAll("[data-profile]").forEach(el => {
-    el.onclick = () => openProfile(el.dataset.profile);
-  });
+  app.querySelectorAll("[data-profile]").forEach(el => { el.onclick = () => openProfile(el.dataset.profile); });
   const input = document.getElementById("chat-input");
   const send = () => {
     const text = input.value.trim();
@@ -772,11 +1066,12 @@ function renderPlayers() {
       <div class="player-list">
         ${state.players.map(p => `
           <div class="player-row" data-profile="${p.id}">
-            ${avatarHtml(p.avatar, p.username)}
+            ${avatarHtml(p)}
             <div class="info">
               <div class="row" style="gap:8px;">
                 <span class="online-badge ${state.online.has(p.id) ? 'on' : ''}"></span>
                 <span class="name">${escapeHtml(p.username)}</span>
+                ${p.role === "dev" ? '<span class="role-tag dev">DEV</span>' : p.role === "admin" ? '<span class="role-tag admin">ADMIN</span>' : ""}
                 ${p.id === state.me.id ? '<span class="muted small">(you)</span>' : ''}
                 <span class="muted small">${cityFlag(p.location)}</span>
               </div>
@@ -793,9 +1088,8 @@ function renderPlayers() {
 async function openProfile(id) {
   state.viewingProfileId = id;
   state.tab = "profile-view";
-  try {
-    state.viewedPlayer = (await api.player(id)).player;
-  } catch { state.viewedPlayer = null; }
+  try { state.viewedPlayer = (await api.player(id)).player; }
+  catch { state.viewedPlayer = null; }
   render();
 }
 
@@ -806,22 +1100,44 @@ function renderMyProfile() {
     <div class="panel">
       <div class="panel-title">Edit Profile</div>
       <div class="profile-header">
-        ${avatarHtml(me.avatar, me.username, "lg")}
+        ${avatarHtml(me, "lg")}
         <div class="info">
-          <h2>${escapeHtml(me.username)}</h2>
+          <h2>${escapeHtml(me.username)} ${me.role === "dev" ? '<span class="role-tag dev">DEV</span>' : me.role === "admin" ? '<span class="role-tag admin">ADMIN</span>' : ""}</h2>
           <div class="lvl-text">LEVEL ${me.level} · ${me.xp}/${xpForNext(me.level)} XP</div>
           <div class="joined">Joined ${fmtDate(me.createdAt)}</div>
         </div>
       </div>
 
       <div style="margin-top: 24px;">
-        <label class="label">Avatar</label>
+        <label class="label">Avatar Color</label>
         <div class="avatar-picker" id="avatar-picker">
           ${AVATARS.map(a => `<div class="avatar ${a} ${me.avatar === a ? 'selected' : ''}" data-avatar="${a}">${(me.username||"?").slice(0,2).toUpperCase()}</div>`).join("")}
         </div>
       </div>
 
-      <div style="margin-top: 20px;">
+      <div style="margin-top: 16px;">
+        <label class="label">Profile Picture URL <span class="muted small">(use a real photo — paste any direct image link, e.g. from Imgur or Discord)</span></label>
+        <div class="row" style="gap:8px;">
+          <input class="input" id="avatar-url" value="${escapeHtml(me.avatarUrl || "")}" placeholder="https://i.imgur.com/your-pic.png" />
+          <button class="btn ghost sm" id="clear-avatar-url">Clear</button>
+        </div>
+        <div class="muted small" style="margin-top:6px;">Direct image links only (.png .jpg .webp .gif). Free tier doesn't support file uploads.</div>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <label class="label">Gender</label>
+        <select class="input" id="gender-input">
+          ${GENDERS.map(g => `<option value="${g.id}" ${me.gender === g.id ? "selected" : ""}>${g.label}</option>`).join("")}
+        </select>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <label class="label">Email</label>
+        <input class="input" id="email-input" type="email" value="${escapeHtml(me.email || "")}" placeholder="you@gmail.com" />
+        <div class="muted small" style="margin-top:6px;">Stored only — verification emails aren't enabled on the free tier.</div>
+      </div>
+
+      <div style="margin-top: 16px;">
         <label class="label">Bio (max 280 chars)</label>
         <textarea class="input" id="bio-input" rows="4" maxlength="280" placeholder="Tell other operatives about yourself...">${escapeHtml(me.bio)}</textarea>
       </div>
@@ -853,10 +1169,21 @@ function setupMyProfileHandlers() {
       } catch (e) { showToast(e.message, "fail"); }
     };
   });
+  document.getElementById("clear-avatar-url").onclick = async () => {
+    try { const { user } = await api.updateMe({ avatarUrl: "" }); state.me = user; render(); }
+    catch (e) { showToast(e.message, "fail"); }
+  };
   document.getElementById("save-profile").onclick = async () => {
     const bio = document.getElementById("bio-input").value;
+    const gender = document.getElementById("gender-input").value;
+    const avatarUrl = document.getElementById("avatar-url").value.trim();
+    const email = document.getElementById("email-input").value.trim();
     try {
-      const { user } = await api.updateMe({ bio });
+      const patch = { bio, gender };
+      // only include avatarUrl/email if they changed (avoid validation errors on empty)
+      patch.avatarUrl = avatarUrl;
+      patch.email = email;
+      const { user } = await api.updateMe(patch);
       state.me = user;
       showToast("Profile saved.", "success");
       render();
@@ -878,15 +1205,21 @@ function renderViewProfile() {
         <button class="btn ghost sm" id="back-btn">← Back</button>
       </div>
       <div class="profile-header">
-        ${avatarHtml(p.avatar, p.username, "lg")}
+        ${avatarHtml(p, "lg")}
         <div class="info">
-          <h2>${escapeHtml(p.username)} ${state.online.has(p.id) ? '<span class="online-badge on" style="display:inline-block; vertical-align:middle;"></span>' : ''}</h2>
+          <h2>${escapeHtml(p.username)}
+            ${p.role === "dev" ? '<span class="role-tag dev">DEV</span>' : p.role === "admin" ? '<span class="role-tag admin">ADMIN</span>' : ""}
+            ${state.online.has(p.id) ? '<span class="online-badge on" style="display:inline-block; vertical-align:middle;"></span>' : ''}
+          </h2>
           <div class="lvl-text">LEVEL ${p.level} · ${p.respect} respect</div>
           <div class="joined">${cityFlag(p.location)} ${escapeHtml(cityName(p.location))} · ${targetStatus !== "ok" ? `${targetStatus.toUpperCase()}` : `last seen ${fmtTime(p.lastSeen)}`}</div>
+          ${p.gender ? `<div class="muted small">Gender: ${escapeHtml(GENDERS.find(g => g.id === p.gender)?.label || p.gender)}</div>` : ""}
         </div>
         ${!isMe ? `
-          <div class="row" style="gap:8px;">
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
             <button class="btn pink sm" id="dm-btn">DM</button>
+            <button class="btn green sm" id="send-money-btn">Send $</button>
+            <button class="btn cyan sm" id="propose-trade-btn">Trade</button>
             <button class="btn red sm" id="atk-btn" ${canAttack ? '' : 'disabled'} title="${canAttack ? 'Attack (25 EN)' : sameCity ? 'Cannot attack now' : 'Different city'}">Attack</button>
           </div>` : ''}
       </div>
@@ -907,6 +1240,27 @@ function renderViewProfile() {
 function setupViewProfileHandlers() {
   document.getElementById("back-btn")?.addEventListener("click", () => { state.tab = "players"; render(); });
   document.getElementById("dm-btn")?.addEventListener("click", () => { state.tab = "chat"; openChat(state.viewingProfileId); });
+  document.getElementById("send-money-btn")?.addEventListener("click", async () => {
+    const amount = Number(prompt(`Send how many credits to ${state.viewedPlayer.username}?`, "100") || 0);
+    if (!amount || amount <= 0) return;
+    const note = prompt("Optional note (or leave blank):", "") || "";
+    try {
+      const r = await api.transfer(state.viewingProfileId, amount, note);
+      handleResult(r);
+    } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("propose-trade-btn")?.addEventListener("click", async () => {
+    state.tradeDraft = {
+      toUserId: state.viewingProfileId,
+      toName: state.viewedPlayer.username,
+      offerMoney: 0, wantMoney: 0,
+      offerItems: [], wantItems: [],
+      message: "",
+    };
+    state.tab = "trade";
+    await loadTradeTab();
+    render();
+  });
   document.getElementById("atk-btn")?.addEventListener("click", async () => {
     if (!confirm("Attack this player? (25 EN)")) return;
     try {
@@ -918,12 +1272,162 @@ function setupViewProfileHandlers() {
   });
 }
 
+// --- ADMIN ---
+async function loadAdminTab() {
+  if (!isStaff()) return;
+  try {
+    const r = await api.adminUsers();
+    state.admin.users = r.users;
+  } catch (e) { showToast(e.message, "fail"); }
+}
+function renderAdmin() {
+  const isDev = state.me.role === "dev";
+  const focus = state.admin.focusUser;
+  return `
+    <div class="panel">
+      <div class="panel-title">${isDev ? "Developer Console" : "Admin Console"}
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="refresh-admin">Refresh</button>
+      </div>
+      <div class="muted small" style="margin-bottom:10px;">${isDev
+        ? "You can promote/demote players, grant rewards, heal/punish, and inspect anyone's full data."
+        : "You can grant items/money and apply hospital/jail. Only the developer can change roles."}</div>
+      <div class="admin-table">
+        <div class="admin-row head">
+          <div>User</div><div>Role</div><div>Lvl</div><div>$</div><div>City</div><div>Last Seen</div><div></div>
+        </div>
+        ${state.admin.users.map(u => `
+          <div class="admin-row" data-admin-row="${u.id}">
+            <div>${escapeHtml(u.username)} ${u.email ? `<span class="muted small">${escapeHtml(u.email)}</span>` : ""}</div>
+            <div><span class="role-tag ${u.role}">${u.role.toUpperCase()}</span></div>
+            <div>${u.level}</div>
+            <div>$${u.money.toLocaleString()}</div>
+            <div>${cityFlag(u.location)} ${escapeHtml(cityName(u.location))}</div>
+            <div class="muted small">${fmtTime(u.lastSeen)}</div>
+            <div><button class="btn ghost sm" data-admin-focus="${u.id}">Manage</button></div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+
+    ${focus ? `
+    <div class="panel">
+      <div class="panel-title">Manage: ${escapeHtml(focus.user.username)}
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="close-focus">Close</button>
+      </div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-label">Role</div><div class="stat-value">${focus.user.role.toUpperCase()}</div></div>
+        <div class="stat"><div class="stat-label">HP</div><div class="stat-value health">${focus.user.health}/${focus.user.maxHealth}</div></div>
+        <div class="stat"><div class="stat-label">EN</div><div class="stat-value energy">${focus.user.energy}/${focus.user.maxEnergy}</div></div>
+        <div class="stat"><div class="stat-label">XP</div><div class="stat-value">${focus.user.xp}/${xpForNext(focus.user.level)}</div></div>
+        <div class="stat"><div class="stat-label">Crimes</div><div class="stat-value pink">${focus.user.crimesCommitted}</div></div>
+        <div class="stat"><div class="stat-label">W/L</div><div class="stat-value">${focus.user.attacksWon}/${focus.user.attacksLost}</div></div>
+      </div>
+
+      <div class="admin-actions">
+        ${isDev && focus.user.role !== "dev" ? `
+          <div class="admin-act-group">
+            <b>Role:</b>
+            ${focus.user.role === "player"
+              ? `<button class="btn purple sm" data-promote="${focus.user.id}">Promote to Admin</button>`
+              : `<button class="btn ghost sm" data-demote="${focus.user.id}">Demote to Player</button>`}
+            <button class="btn red sm" data-delete="${focus.user.id}">Delete account</button>
+          </div>` : ""}
+        <div class="admin-act-group">
+          <b>Grant:</b>
+          <input class="input sm" id="grant-money" placeholder="money (e.g. 5000 or -1000)" style="width:160px;" />
+          <button class="btn green sm" id="grant-money-btn">Grant Money</button>
+        </div>
+        <div class="admin-act-group">
+          <b>Item:</b>
+          <input class="input sm" id="grant-item-id" placeholder="item-id (e.g. medkit)" style="width:160px;" />
+          <input class="input sm" id="grant-item-qty" type="number" min="1" value="1" style="width:80px;" />
+          <button class="btn green sm" id="grant-item-btn">Grant Item</button>
+        </div>
+        <div class="admin-act-group">
+          <b>Punish:</b>
+          <input class="input sm" id="hosp-secs" type="number" min="0" placeholder="hospital secs" style="width:130px;" />
+          <input class="input sm" id="jail-secs" type="number" min="0" placeholder="jail secs" style="width:120px;" />
+          <button class="btn red sm" id="punish-btn">Apply</button>
+          <button class="btn cyan sm" id="heal-full-btn">Full Heal/Release</button>
+        </div>
+      </div>
+
+      <div class="panel-title" style="margin-top:18px;">Inventory</div>
+      ${focus.inventory.length === 0 ? '<div class="muted">empty</div>' : `
+        <div class="item-list">
+          ${focus.inventory.map(r => `
+            <div class="item-row">
+              <div class="item-icon ${r.item?.category}">${itemIcon(r.item?.category)}</div>
+              <div class="info">
+                <b>${escapeHtml(r.item?.name || r.itemId)}</b> <span class="muted">×${r.quantity}</span>
+                <div class="muted small">${escapeHtml(r.itemId)}</div>
+              </div>
+            </div>
+          `).join("")}
+        </div>`}
+    </div>
+    ` : ""}
+  `;
+}
+function setupAdminHandlers() {
+  document.getElementById("refresh-admin")?.addEventListener("click", async () => { await loadAdminTab(); render(); });
+  app.querySelectorAll("[data-admin-focus]").forEach(el => {
+    el.onclick = async () => {
+      try {
+        state.admin.focusUser = await api.adminUser(el.dataset.adminFocus);
+        render();
+      } catch (e) { showToast(e.message, "fail"); }
+    };
+  });
+  document.getElementById("close-focus")?.addEventListener("click", () => { state.admin.focusUser = null; render(); });
+
+  const focus = state.admin.focusUser;
+  if (!focus) return;
+  const userId = focus.user.id;
+  document.querySelector("[data-promote]")?.addEventListener("click", async () => {
+    try { await api.adminRole(userId, "admin"); showToast("Promoted to admin.", "success"); await reloadAdminFocus(userId); } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.querySelector("[data-demote]")?.addEventListener("click", async () => {
+    try { await api.adminRole(userId, "player"); showToast("Demoted to player.", "info"); await reloadAdminFocus(userId); } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.querySelector("[data-delete]")?.addEventListener("click", async () => {
+    if (!confirm(`PERMANENTLY delete ${focus.user.username}? This cannot be undone.`)) return;
+    try { await api.adminDelete(userId); showToast("Deleted.", "info"); state.admin.focusUser = null; await loadAdminTab(); render(); } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("grant-money-btn")?.addEventListener("click", async () => {
+    const money = Number(document.getElementById("grant-money").value || 0);
+    if (!money) return;
+    try { await api.adminGrant({ userId, money }); showToast("Money granted.", "success"); await reloadAdminFocus(userId); } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("grant-item-btn")?.addEventListener("click", async () => {
+    const itemId = document.getElementById("grant-item-id").value.trim();
+    const qty = Number(document.getElementById("grant-item-qty").value || 1);
+    if (!itemId) return;
+    try { await api.adminGrant({ userId, itemId, qty }); showToast("Item granted.", "success"); await reloadAdminFocus(userId); } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("punish-btn")?.addEventListener("click", async () => {
+    const hospitalSeconds = Number(document.getElementById("hosp-secs").value || 0);
+    const jailSeconds = Number(document.getElementById("jail-secs").value || 0);
+    try { await api.adminPunish({ userId, hospitalSeconds, jailSeconds }); showToast("Applied.", "info"); await reloadAdminFocus(userId); } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("heal-full-btn")?.addEventListener("click", async () => {
+    try { await api.adminPunish({ userId, healFull: true }); showToast("Full heal.", "success"); await reloadAdminFocus(userId); } catch (e) { showToast(e.message, "fail"); }
+  });
+}
+async function reloadAdminFocus(id) {
+  try { state.admin.focusUser = await api.adminUser(id); await loadAdminTab(); render(); } catch {}
+}
+
 // --- MAIN RENDER ---
 async function loadTabData(tab) {
   if (tab === "crimes" && state.crimes.length === 0) await loadCrimes();
   else if (tab === "jobs" && state.jobs.length === 0) await loadJobs();
-  else if (tab === "missions" && state.missions.length === 0) await loadMissions();
+  else if (tab === "missions") await loadMissions();
   else if (tab === "items") await loadItemsTab();
+  else if (tab === "trade") await loadTradeTab();
+  else if (tab === "admin") await loadAdminTab();
   else if (tab === "players") {
     try { state.players = (await api.players()).players; } catch {}
   }
@@ -939,14 +1443,16 @@ function render() {
   else if (state.tab === "missions") body = renderMissions();
   else if (state.tab === "travel") body = renderTravel();
   else if (state.tab === "items") body = renderItems();
+  else if (state.tab === "trade") body = renderTrade();
+  else if (state.tab === "helper") body = renderHelper();
   else if (state.tab === "chat") body = renderChat();
   else if (state.tab === "players") body = renderPlayers();
   else if (state.tab === "profile") body = renderMyProfile();
   else if (state.tab === "profile-view") body = renderViewProfile();
+  else if (state.tab === "admin") body = isStaff() ? renderAdmin() : `<div class="panel"><div class="muted">Access denied.</div></div>`;
 
   app.innerHTML = topbarHtml() + statusBanner() + vitalsBarsHtml() + tabsHtml() + body;
 
-  // Common handlers
   app.querySelectorAll(".tab[data-tab]").forEach(el => {
     el.onclick = async () => { state.tab = el.dataset.tab; await loadTabData(state.tab); render(); };
   });
@@ -955,6 +1461,7 @@ function render() {
     state.me = null; state.log = [];
     state.worldMessages = []; state.privateThreads = {};
     state.unread = { world: 0, private: {} };
+    state.aiHistory = []; state.tradeDraft = null;
     render();
   });
   document.getElementById("bust-btn")?.addEventListener("click", () => doSimpleAction("bust"));
@@ -972,13 +1479,19 @@ function render() {
     app.querySelectorAll("[data-job]").forEach(el => { el.onclick = () => doJob(el.dataset.job); });
   } else if (state.tab === "missions") {
     document.getElementById("refresh-missions")?.addEventListener("click", refreshMissions);
-    app.querySelectorAll("[data-mission]").forEach(el => { el.onclick = () => takeMission(el.dataset.mission); });
+    app.querySelectorAll("[data-start]").forEach(el => { el.onclick = () => startMission(el.dataset.start); });
+    app.querySelectorAll("[data-claim]").forEach(el => { el.onclick = () => claimMission(el.dataset.claim); });
+    app.querySelectorAll("[data-abort]").forEach(el => { el.onclick = () => abortMission(el.dataset.abort); });
   } else if (state.tab === "travel") {
     app.querySelectorAll("[data-travel]").forEach(el => { el.onclick = () => doTravel(el.dataset.travel); });
   } else if (state.tab === "items") {
     app.querySelectorAll("[data-buy]").forEach(el => { el.onclick = () => doBuy(el.dataset.buy); });
     app.querySelectorAll("[data-sell]").forEach(el => { el.onclick = () => doSell(el.dataset.sell); });
     app.querySelectorAll("[data-use]").forEach(el => { el.onclick = () => doUse(el.dataset.use); });
+  } else if (state.tab === "trade") {
+    setupTradeHandlers();
+  } else if (state.tab === "helper") {
+    setupHelperHandlers();
   } else if (state.tab === "chat") {
     setupChatHandlers();
   } else if (state.tab === "players") {
@@ -987,6 +1500,8 @@ function render() {
     setupMyProfileHandlers();
   } else if (state.tab === "profile-view") {
     setupViewProfileHandlers();
+  } else if (state.tab === "admin") {
+    setupAdminHandlers();
   }
 }
 

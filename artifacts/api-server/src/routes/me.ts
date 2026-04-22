@@ -17,10 +17,22 @@ router.get("/me", authMiddleware, async (req: AuthedRequest, res) => {
 });
 
 router.patch("/me", authMiddleware, async (req: AuthedRequest, res) => {
-  const { bio, avatar } = req.body || {};
+  const { bio, avatar, gender, avatarUrl, email } = req.body || {};
   const updates: Record<string, unknown> = {};
   if (typeof bio === "string") updates.bio = bio.slice(0, 280);
   if (typeof avatar === "string" && /^[a-z0-9-]{1,20}$/.test(avatar)) updates.avatar = avatar;
+  if (typeof gender === "string" && ["male", "female", "other", "prefer_not", ""].includes(gender)) updates.gender = gender;
+  if (typeof avatarUrl === "string") {
+    const url = avatarUrl.trim();
+    if (url === "") updates.avatarUrl = "";
+    else if (/^https?:\/\/.+\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(url) && url.length <= 500) updates.avatarUrl = url;
+    else return res.status(400).json({ error: "Avatar URL must be an https image link (png/jpg/webp/gif)." });
+  }
+  if (typeof email === "string") {
+    const e = email.trim().toLowerCase();
+    if (e === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) updates.email = e;
+    else return res.status(400).json({ error: "Invalid email." });
+  }
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
   const updated = await db.update(usersTable).set(updates).where(eq(usersTable.id, req.user!.id)).returning();
   res.json({ user: privateProfile(updated[0]!) });

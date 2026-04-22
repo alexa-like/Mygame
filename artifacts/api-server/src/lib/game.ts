@@ -3,7 +3,8 @@ import { eq, and } from "drizzle-orm";
 import { CITIES, HOME_CITY, CRIMES, JOBS, ITEMS, itemById, type Crime, type Job, type Item, type City } from "./catalog";
 
 export function xpForNext(level: number): number {
-  return Math.round(80 * Math.pow(1.45, level - 1));
+  // Smoother curve so leveling feels achievable: L1→30, L5→73, L10→224, L20→2080.
+  return Math.round(30 * Math.pow(1.25, level - 1));
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -426,7 +427,7 @@ export async function attackPlayer(attacker: User, defenderId: string): Promise<
   return { user: a, defender: d, message: log, type: resultType, leveled: false };
 }
 
-// --- MISSIONS (kept lightweight) ---
+// --- MISSIONS removed: see lib/missions.ts (new time-gated flow). Kept type for compatibility. ---
 
 export interface Mission {
   id: string; title: string; description: string;

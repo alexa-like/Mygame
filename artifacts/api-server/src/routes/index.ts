@@ -5,6 +5,9 @@ import meRouter from "./me";
 import playersRouter from "./players";
 import missionsRouter from "./missions";
 import chatRouter from "./chat";
+import tradeRouter from "./trade";
+import adminRouter from "./admin";
+import aiRouter from "./ai";
 
 const router: IRouter = Router();
 
@@ -14,5 +17,8 @@ router.use(meRouter);
 router.use(playersRouter);
 router.use(missionsRouter);
 router.use(chatRouter);
+router.use(tradeRouter);
+router.use(adminRouter);
+router.use(aiRouter);
 
 export default router;

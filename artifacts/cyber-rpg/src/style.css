@@ -656,3 +656,164 @@ h1, h2, h3 {
   .auth-screen .title { font-size: 32px; }
   .title { font-size: 22px; }
 }
+
+/* === New v2 styles === */
+.role-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.role-tag.dev { background: var(--neon-pink); color: #fff; box-shadow: 0 0 8px var(--neon-pink); }
+.role-tag.admin { background: var(--neon-purple); color: #fff; box-shadow: 0 0 8px var(--neon-purple); }
+.role-tag.player { background: var(--bg-3); color: var(--text-2); }
+
+/* Avatar with image */
+.avatar.img { padding: 0; overflow: hidden; }
+.avatar.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* AI helper panel */
+.ai-panel { display: flex; flex-direction: column; }
+.ai-messages {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg-1); border: 1px solid var(--bg-3);
+  border-radius: 8px; padding: 14px;
+  height: 380px; overflow-y: auto;
+  margin-bottom: 12px;
+}
+.ai-msg {
+  padding: 10px 12px; border-radius: 8px;
+  max-width: 85%; line-height: 1.5;
+  font-size: 14px;
+}
+.ai-msg.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-purple) 100%);
+  color: #000;
+}
+.ai-msg.bot {
+  align-self: flex-start;
+  background: var(--bg-3);
+  color: var(--text-1);
+  border-left: 3px solid var(--neon-pink);
+}
+.ai-msg.ai-typing { opacity: 0.6; font-style: italic; }
+
+/* Trade */
+.trade-card {
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.trade-card .head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.trade-rows {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0;
+}
+.trade-side {
+  background: var(--bg-2);
+  border: 1px solid var(--bg-3);
+  border-radius: 6px;
+  padding: 8px;
+  min-height: 60px;
+}
+.trade-arrow {
+  font-size: 22px;
+  color: var(--neon-cyan);
+  text-align: center;
+}
+.trade-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--bg-3);
+  border-radius: 4px;
+  font-size: 12px;
+  margin: 2px;
+  font-family: 'Share Tech Mono', monospace;
+}
+.trade-chip.money { color: var(--neon-green); border-color: var(--neon-green); }
+.trade-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.trade-builder {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.trade-inv-list, .trade-want-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 220px; overflow-y: auto;
+  background: var(--bg-1); border: 1px solid var(--bg-3);
+  border-radius: 6px; padding: 8px;
+}
+.trade-inv-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 13px;
+}
+.input.sm { padding: 4px 8px; font-size: 13px; }
+.trade-history { display: flex; flex-direction: column; gap: 4px; }
+.trade-history-row {
+  display: flex; gap: 12px; align-items: center;
+  padding: 6px 8px; background: var(--bg-1); border-radius: 4px;
+  font-size: 13px;
+}
+.trade-status {
+  font-family: 'Orbitron', sans-serif; font-weight: 700;
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+}
+.trade-status.accepted { background: var(--neon-green); color: #000; }
+.trade-status.rejected, .trade-status.cancelled { background: var(--bg-3); color: var(--text-2); }
+.trade-status.pending { background: var(--neon-yellow); color: #000; }
+
+/* Admin */
+.admin-table {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.admin-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.6fr 1fr 1.2fr 1fr 1fr;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
+  border-radius: 6px;
+  font-size: 13px;
+  align-items: center;
+}
+.admin-row.head {
+  background: var(--bg-3);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-2);
+}
+.admin-actions {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 14px;
+}
+.admin-act-group {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 8px;
+  background: var(--bg-1);
+  border-radius: 6px;
+}
+
+/* Helper button color variant */
+.btn.cyan { background: var(--neon-cyan); color: #000; border: 1px solid var(--neon-cyan); }
+.btn.cyan:hover:not(:disabled) { box-shadow: 0 0 14px var(--neon-cyan); }
+
+@media (max-width: 720px) {
+  .trade-builder { grid-template-columns: 1fr; }
+  .trade-rows { grid-template-columns: 1fr; }
+  .admin-row { grid-template-columns: 1fr 1fr; font-size: 12px; }
+  .admin-row.head { display: none; }
+}

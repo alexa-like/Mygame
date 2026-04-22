@@ -22,7 +22,7 @@ async function http(method, path, body) {
 }
 
 export const api = {
-  register: (username, pin) => http("POST", "/auth/register", { username, pin }),
+  register: (payload) => http("POST", "/auth/register", payload),
   login: (username, pin) => http("POST", "/auth/login", { username, pin }),
   me: () => http("GET", "/me"),
   updateMe: (patch) => http("PATCH", "/me", patch),
@@ -50,10 +50,35 @@ export const api = {
 
   missions: () => http("GET", "/missions"),
   refreshMissions: () => http("POST", "/missions/refresh"),
-  completeMission: (id) => http("POST", `/missions/${id}/complete`),
+  startMission: (id) => http("POST", `/missions/${id}/start`),
+  claimMission: (id) => http("POST", `/missions/${id}/claim`),
+  abortMission: (id) => http("POST", `/missions/${id}/abort`),
 
   worldChat: () => http("GET", "/chat/world"),
   privateChat: (uid) => http("GET", `/chat/private/${uid}`),
+
+  // Trades + transfers
+  transfer: (toUserId, amount, note) => http("POST", "/transfer", { toUserId, amount, note }),
+  transfers: () => http("GET", "/transfers"),
+  trades: () => http("GET", "/trades"),
+  createTrade: (payload) => http("POST", "/trades", payload),
+  acceptTrade: (id) => http("POST", `/trades/${id}/accept`),
+  rejectTrade: (id) => http("POST", `/trades/${id}/reject`),
+
+  // AI helper
+  askAi: (question) => http("POST", "/ai/ask", { question }),
+  clearAi: () => http("POST", "/ai/clear"),
+
+  // Admin
+  adminUsers: () => http("GET", "/admin/users"),
+  adminUser: (id) => http("GET", `/admin/users/${id}`),
+  adminTrades: () => http("GET", "/admin/trades"),
+  adminTransfers: () => http("GET", "/admin/transfers"),
+  adminAttacks: () => http("GET", "/admin/attacks"),
+  adminGrant: (payload) => http("POST", "/admin/grant", payload),
+  adminPunish: (payload) => http("POST", "/admin/punish", payload),
+  adminRole: (userId, role) => http("POST", "/admin/role", { userId, role }),
+  adminDelete: (id) => http("DELETE", `/admin/users/${id}`),
 };
 
 // --- WebSocket ---

@@ -26,7 +26,6 @@ export async function authMiddleware(req: AuthedRequest, res: Response, next: Ne
   let user = rows[0];
   if (!user) return res.status(401).json({ error: "Invalid token" });
 
-  // Apply regen + persist if changed
   const regenned = applyRegen(user);
   if (regenned !== user) {
     await db.update(usersTable).set({
@@ -38,6 +37,20 @@ export async function authMiddleware(req: AuthedRequest, res: Response, next: Ne
     await db.update(usersTable).set({ lastSeen: new Date() }).where(eq(usersTable.id, user.id));
   }
   req.user = user;
+  next();
+}
+
+export function adminOnly(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (!req.user || (req.user.role !== "admin" && req.user.role !== "dev")) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  next();
+}
+
+export function devOnly(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (!req.user || req.user.role !== "dev") {
+    return res.status(403).json({ error: "Developer access required" });
+  }
   next();
 }
 
@@ -53,6 +66,9 @@ export function publicProfile(u: User) {
     username: u.username,
     bio: u.bio,
     avatar: u.avatar,
+    avatarUrl: u.avatarUrl,
+    gender: u.gender,
+    role: u.role,
     level: u.level,
     money: u.money,
     respect: u.respect,
@@ -77,6 +93,7 @@ export function privateProfile(u: User) {
   return {
     ...publicProfile(u),
     token: u.token,
+    email: u.email,
     xp: u.xp,
     energy: u.energy,
     maxEnergy: u.maxEnergy,
@@ -88,5 +105,14 @@ export function privateProfile(u: User) {
     travelArrivalAt: u.travelArrivalAt,
     hospitalUntil: u.hospitalUntil,
     jailUntil: u.jailUntil,
+  };
+}
+
+// Admin view: includes everything a dev/admin needs to see
+export function adminView(u: User) {
+  return {
+    ...privateProfile(u),
+    pinHashLast4: u.pinHash.slice(-4),
+    lastRegenAt: u.lastRegenAt,
   };
 }

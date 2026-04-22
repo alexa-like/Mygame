@@ -44,19 +44,39 @@ Costs 25 EN. Effective attack = STR×0.55 + SPD×0.25 + DEX×0.20 + weapon. Effe
 ### Hospital / Jail
 Time-locked status (`hospitalUntil`/`jailUntil`). Hospital can be paid out via `POST /api/hospital/bust` (cost scales with remaining time + level).
 
-### Missions (kept lightweight)
-4 random per user, easy/medium/hard. `GET /api/missions`, `POST /api/missions/refresh`, `POST /api/missions/:id/complete`.
+### Missions (time-gated)
+Up to 4 contracts per user, easy/medium/hard. Flow: **Start** (consumes EN, sets `completesAt`) → live countdown → **Claim** (rolls success: easy 0.85, medium 0.70, hard 0.55; on failure player takes HP damage and may be hospitalized). Routes: `GET /api/missions`, `POST /api/missions/refresh`, `POST /api/missions/:id/start`, `POST /api/missions/:id/claim`, `POST /api/missions/:id/abort`. XP curve lowered to `30 * 1.25^(L-1)`.
 
 ### Chat (WS)
 World chat (broadcast) + private 1:1 DMs. Online presence tracked.
 
+### Money transfer + Trade
+- `POST /api/transfer { toUserId, amount, note }` — instant credits transfer with audit row in `transfers` table.
+- Trade proposals: `POST /api/trades` with `{toUserId, offerMoney, offerItems[], wantMoney, wantItems[]}`. Items are NOT escrowed — both sides re-verified atomically inside a DB transaction at accept time. `POST /api/trades/:id/accept|reject`, `GET /api/trades` returns `{incoming, outgoing, history}`. Stored in `trades` table.
+
+### AI Helper Bot ("Choomba")
+`POST /api/ai/ask { question }` → claude-haiku-4-5 via Anthropic AI integration. System prompt restricts answers to game-only topics. In-memory rolling history per user (last 12 messages). `POST /api/ai/clear` resets it.
+
+### Roles & Admin
+- Roles: `player` / `admin` / `dev`. The first registered user is auto-promoted to `dev`.
+- Devs only can change roles; devs cannot be demoted or deleted.
+- Admin/dev console (`/api/admin/*`): list users, inspect inventories, grant money or items, apply hospital/jail or full-heal, promote/demote, delete accounts.
+
 ## Files
 - Catalog: `artifacts/api-server/src/lib/catalog.ts`
-- Game logic: `artifacts/api-server/src/lib/game.ts`
-- Auth + regen: `artifacts/api-server/src/lib/auth.ts`
-- Routes: `artifacts/api-server/src/routes/me.ts` (most), `routes/players.ts`, `routes/chat.ts`, `routes/auth.ts`, `routes/missions.ts`
+- Game logic: `artifacts/api-server/src/lib/game.ts` (xpForNext lowered)
+- Auth + regen + role helpers: `artifacts/api-server/src/lib/auth.ts`
+- Trade engine: `artifacts/api-server/src/lib/trade.ts`
+- Mission engine: `artifacts/api-server/src/lib/missions.ts`
+- Routes: `routes/{auth,me,players,chat,missions,trade,admin,ai}.ts`
 - WS: `artifacts/api-server/src/lib/wsServer.ts`
+- Schema: `lib/db/src/schema/index.ts` (users add `email,gender,avatarUrl,role`; new `transfers`, `trades`, time-gated `missions`)
 - Frontend: `artifacts/cyber-rpg/src/{game.js,api.js,style.css}`
 
 ## Tabs (frontend)
-home / crimes / gym / jobs / missions / travel / items / chat / players / profile + dynamic profile-view (with Attack button).
+home / crimes / gym / jobs / missions / travel / items / **trade** / chat / **helper** / players / profile (+ **admin** for staff) + dynamic profile-view (DM, Send $, Trade, Attack buttons).
+
+## Notes (free tier constraints)
+- No real email confirmation: emails are stored on the user but unverified.
+- Profile pictures are URL-only (paste a direct image link), since file uploads aren't enabled.
+- Anthropic uses Replit's AI Integration proxy (`AI_INTEGRATIONS_ANTHROPIC_*` env).
