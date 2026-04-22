@@ -503,7 +503,152 @@ h1, h2, h3 {
   to { transform: translateX(0); opacity: 1; }
 }
 
+/* Vitals row (always visible) */
+.vitals-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.vital {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.vital-label {
+  display: flex; justify-content: space-between;
+  font-size: 10px; letter-spacing: 1px; color: var(--muted);
+  margin-bottom: 4px; text-transform: uppercase;
+}
+.vital-label span:last-child { color: var(--text); font-family: 'Orbitron', sans-serif; }
+.bar-fill.nerve { background: linear-gradient(90deg, var(--neon-cyan), #6df7ff); box-shadow: 0 0 8px var(--neon-cyan); }
+.bar-fill.happy { background: linear-gradient(90deg, var(--neon-yellow), #fff4a3); box-shadow: 0 0 8px var(--neon-yellow); }
+
+/* Status banner (travel / hospital / jail) */
+.status-banner {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  border: 1px solid;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.status-banner b { font-family: 'Orbitron', sans-serif; }
+.status-banner > span:first-child { font-weight: bold; flex-shrink: 0; }
+.status-banner.travel { border-color: var(--neon-orange); color: var(--neon-orange); background: rgba(255,140,59,0.08); }
+.status-banner.hospital { border-color: var(--neon-red); color: var(--neon-red); background: rgba(255,59,92,0.08); }
+.status-banner.jail { border-color: var(--neon-yellow); color: var(--neon-yellow); background: rgba(255,227,71,0.08); }
+
+/* Crimes */
+.crime-list, .job-list, .item-list { display: grid; gap: 10px; }
+.crime-card, .job-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+}
+.crime-card .head, .job-card {
+  display: flex; justify-content: space-between; align-items: start; gap: 12px;
+}
+.crime-card h3, .job-card h3 { font-size: 14px; color: var(--neon-cyan); letter-spacing: 1px; }
+.crime-card .meta, .job-card .meta {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 11px; color: var(--muted);
+}
+.crime-card .meta b, .job-card .meta b {
+  color: var(--text); margin-left: 4px;
+  font-family: 'Orbitron', sans-serif;
+}
+.crime-card.locked { opacity: 0.6; }
+
+/* Gym */
+.gym-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.gym-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+}
+.gym-stat-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px; letter-spacing: 2px; color: var(--muted);
+  text-transform: uppercase;
+}
+.gym-stat-val {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 32px; font-weight: 900; margin: 8px 0;
+}
+.gym-stat-val.cyan { color: var(--neon-cyan); }
+.gym-stat-val.pink { color: var(--neon-pink); }
+.gym-stat-val.purple { color: var(--neon-purple); }
+.gym-stat-val.yellow { color: var(--neon-yellow); }
+
+/* Travel cities */
+.city-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.city-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 10px;
+  text-align: center;
+  transition: all 0.15s;
+}
+.city-card:hover { border-color: rgba(255,140,59,0.4); }
+.city-card.here {
+  border-color: var(--neon-cyan);
+  background: rgba(0,240,255,0.06);
+  box-shadow: 0 0 16px rgba(0,240,255,0.15);
+}
+.city-flag { font-size: 32px; margin-bottom: 6px; }
+.city-name {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px; letter-spacing: 1px;
+  color: var(--neon-cyan);
+  margin-bottom: 4px;
+}
+
+/* Items */
+.item-row {
+  display: flex; gap: 12px; align-items: center;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+.item-icon {
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  background: var(--bg-3);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.item-row .info { flex: 1; min-width: 0; }
+.cat-weapon { color: var(--neon-pink); font-size: 9px; letter-spacing: 1px; }
+.cat-armor { color: var(--neon-purple); font-size: 9px; letter-spacing: 1px; }
+.cat-consumable { color: var(--neon-green); font-size: 9px; letter-spacing: 1px; }
+.cat-trade { color: var(--neon-yellow); font-size: 9px; letter-spacing: 1px; }
+
+.badge-pink {
+  display: inline-block; min-width: 16px; padding: 1px 5px;
+  background: var(--neon-pink); color: white;
+  font-size: 9px; border-radius: 8px;
+  font-family: 'Share Tech Mono', monospace;
+}
+
 @media (max-width: 720px) {
+  .vitals-row { grid-template-columns: repeat(2, 1fr); }
   .chat-layout { grid-template-columns: 1fr; }
   .chat-sidebar { max-height: 200px; }
   .chat-main { height: 480px; }
