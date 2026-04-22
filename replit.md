@@ -1,27 +1,32 @@
-# Workspace
+# Neon Streets
 
-## Overview
-
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+A multiplayer browser-based cyberpunk text RPG (inspired by Torn City).
 
 ## Stack
+- **Frontend** (`artifacts/cyber-rpg`): Vanilla HTML/CSS/JS served via Vite. ES modules, no framework.
+- **Backend** (`artifacts/api-server`): Express + WebSocket (`ws`) on `/api/*` and `/api/ws`.
+- **Database** (`lib/db`): PostgreSQL via Drizzle ORM. Schema in `lib/db/src/schema/index.ts`.
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+## Auth
+Simple username + 4-8 digit PIN. PIN is sha256-hashed with a constant salt. A bearer token is generated on register and rotated on every login. Token is stored in `localStorage` and sent as `Authorization: Bearer <token>` for HTTP and as `{kind:"auth",token}` over WebSocket.
 
-## Key Commands
+## Game Features
+- **Stats**: money, level, XP, health, energy. XP curve `50 * 1.5^(level-1)`. Level-ups raise max health/energy and fully heal.
+- **Actions** (`POST /api/me/action` with `type`): `crime`, `work`, `train`, `heal_paid`, `heal_free`. All logic server-side in `artifacts/api-server/src/lib/game.ts`.
+- **Missions** (`/api/missions`, `/api/missions/refresh`, `/api/missions/:id/complete`): 4 random missions per user, refreshed on demand or after 2 min TTL. Difficulty (easy/medium/hard) scales reward and success chance.
+- **Players** (`/api/players`, `/api/players/:id`): listing + public profiles.
+- **Profile** (`PATCH /api/me`): edit `bio` and `avatar`.
+- **Chat**: real-time via WebSocket at `/api/ws`.
+  - World chat (broadcast)
+  - Private DMs between players
+  - History persisted in `messages` table; loaded on demand.
+  - Online presence broadcast via `{kind:"online",userIds:[...]}`.
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
-
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+## Files of note
+- `artifacts/api-server/src/index.ts` — http server + ws attach
+- `artifacts/api-server/src/lib/wsServer.ts` — WebSocket logic
+- `artifacts/api-server/src/lib/game.ts` — game mechanics
+- `artifacts/api-server/src/lib/auth.ts` — token + middleware
+- `artifacts/api-server/src/routes/{auth,me,players,missions,chat}.ts`
+- `artifacts/cyber-rpg/src/{api,game}.js` + `style.css`
+- `lib/db/src/schema/index.ts` — `users` and `messages` tables
