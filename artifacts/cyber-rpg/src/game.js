@@ -45,6 +45,11 @@ const state = {
   aiBusy: false,
   // Admin
   admin: { users: [], focusUser: null },
+  // Bank / Daily / Events / Gym
+  bank: null,
+  daily: null,
+  events: [],
+  gymSets: 1,
 };
 
 let countdownTimer = null;
@@ -124,6 +129,7 @@ async function loadInitialData() {
   ]);
   state.players = players.players;
   state.worldMessages = world.messages;
+  await refreshDaily();
 }
 
 async function refreshMe() {
@@ -214,8 +220,8 @@ function renderAuth() {
           <input class="input" id="auth-username" placeholder="3-20 chars" maxlength="20" autocomplete="username" />
         </div>
         <div class="field">
-          <label class="label">PIN (4-8 digits)</label>
-          <input class="input" id="auth-pin" type="password" inputmode="numeric" placeholder="••••" maxlength="8" autocomplete="${isReg ? 'new-password' : 'current-password'}" />
+          <label class="label">Password (4-32 chars)</label>
+          <input class="input" id="auth-pin" type="password" placeholder="••••••••" maxlength="32" autocomplete="${isReg ? 'new-password' : 'current-password'}" />
         </div>
         ${isReg ? `
           <div class="field">
@@ -241,7 +247,7 @@ function renderAuth() {
   const submit = async () => {
     const username = document.getElementById("auth-username").value.trim();
     const pin = document.getElementById("auth-pin").value.trim();
-    if (!username || !pin) { state.authError = "Username and PIN required."; render(); return; }
+    if (!username || !pin) { state.authError = "Username and password required."; render(); return; }
     state.authError = "";
     try {
       let res;
@@ -357,7 +363,10 @@ function tabsHtml() {
     { id: "jobs",     label: "Jobs" },
     { id: "missions", label: "Missions" },
     { id: "travel",   label: "Travel" },
-    { id: "items",    label: "Items" },
+    { id: "items",    label: "Shop" },
+    { id: "inventory",label: "Inventory" },
+    { id: "bank",     label: "Bank" },
+    { id: "events",   label: "Log" },
     { id: "trade",    label: "Trade", badge: pendingTrades || null },
     { id: "chat",     label: "Chat", badge: (state.unread.world + totalPrivateUnread) || null },
     { id: "helper",   label: "Helper" },
@@ -403,6 +412,8 @@ function renderHome() {
       </div>
     </div>
 
+    ${dailyCardHtml()}
+
     <div class="panel">
       <div class="panel-title">Quick Actions</div>
       <div class="actions">
@@ -412,6 +423,9 @@ function renderHome() {
         <button class="btn yellow" data-go="missions">🎯 Missions</button>
         <button class="btn orange" data-go="travel">✈️ Travel</button>
         <button class="btn cyan" data-go="trade">💱 Trade</button>
+        <button class="btn purple" data-go="inventory">🎒 Inventory</button>
+        <button class="btn green" data-go="bank">🏦 Bank</button>
+        <button class="btn" data-go="events">📜 Event Log</button>
         <button class="btn" data-go="helper">🤖 Helper Bot</button>
         <button class="btn ghost" data-act="heal" ${me.money < 50 + me.level * 10 || me.health >= me.maxHealth ? 'disabled' : ''}>🏥 Heal ($${50 + me.level * 10})</button>
       </div>
@@ -510,14 +524,19 @@ function renderGym() {
         <span class="spacer"></span>
         <span class="muted small">Energy: <b style="color:var(--neon-purple)">${me.energy}/${me.maxEnergy}</b> · Happy: <b style="color:var(--neon-yellow)">${me.happy}/${me.maxHappy}</b></span>
       </div>
-      <div class="muted small" style="margin-bottom:14px;">Each train costs <b>5 energy</b> + <b>5 happy</b>. Higher happy = bigger gains.</div>
+      <div class="muted small" style="margin-bottom:10px;">Each set costs <b>5 energy</b> + <b>5 happy</b>. Higher happy = bigger gains. Choose how many sets to train.</div>
+      <div class="row" style="gap:10px; align-items:center; margin-bottom:14px;">
+        <label class="label" style="margin:0;">Sets</label>
+        <input class="input" id="gym-sets" type="number" min="1" max="20" value="${state.gymSets || 1}" style="width:90px;" />
+        <span class="muted small">Max 20. Will auto-cap by energy/happy.</span>
+      </div>
       <div class="gym-grid">
         ${stats.map(s => `
           <div class="gym-card">
             <div class="gym-stat-label">${s.label}</div>
             <div class="gym-stat-val ${s.color}">${me[s.id].toFixed(1)}</div>
             <div class="muted small" style="margin: 6px 0 12px;">${s.desc}</div>
-            <button class="btn ${s.color} sm" data-gym="${s.id}" ${me.energy < 5 || me.happy < 1 ? 'disabled' : ''}>Train +1</button>
+            <button class="btn ${s.color} sm" data-gym="${s.id}" ${me.energy < 5 || me.happy < 1 ? 'disabled' : ''}>Train</button>
           </div>
         `).join("")}
       </div>
@@ -525,7 +544,9 @@ function renderGym() {
   `;
 }
 async function doGym(stat) {
-  try { handleResult(await api.gym(stat)); }
+  const sets = Math.max(1, Math.min(20, Number(document.getElementById("gym-sets")?.value) || 1));
+  state.gymSets = sets;
+  try { handleResult(await api.gym(stat, sets)); }
   catch (e) { showToast(e.message, "fail"); }
 }
 
@@ -679,62 +700,115 @@ async function loadItemsTab() {
 function itemIcon(cat) {
   return cat === "weapon" ? "⚔️" : cat === "armor" ? "🛡️" : cat === "consumable" ? "💊" : "📦";
 }
+// Categorize an item into one of the new player-facing buckets
+function shopBucket(cat) {
+  if (cat === "weapon" || cat === "armor") return "fight";
+  if (cat === "consumable") return "medical";
+  return "utility"; // trade etc.
+}
+const SHOP_BUCKETS = [
+  { id: "fight",   label: "Fighting Equipment", icon: "⚔️" },
+  { id: "medical", label: "Medical",            icon: "💊" },
+  { id: "utility", label: "Bank / Utility",     icon: "📦" },
+];
+function shopItemHtml(it, money) {
+  return `
+    <div class="item-row">
+      <div class="item-icon ${it.category}">${itemIcon(it.category)}</div>
+      <div class="info">
+        <div class="row" style="gap:8px;"><b>${escapeHtml(it.name)}</b> <span class="cat-${it.category}">${it.category.toUpperCase()}</span></div>
+        <div class="muted small">${escapeHtml(it.description)}</div>
+        ${it.attackPower ? `<div class="small" style="color:var(--neon-pink)">+${it.attackPower} ATK</div>` : ''}
+        ${it.defensePower ? `<div class="small" style="color:var(--neon-purple)">+${it.defensePower} DEF</div>` : ''}
+        ${it.effect ? `<div class="small" style="color:var(--neon-green)">+${it.effect.amount} ${it.effect.stat.toUpperCase()}</div>` : ''}
+      </div>
+      <div style="text-align:right;">
+        <div style="color:var(--neon-green); font-family: 'Orbitron'; font-weight:700;">$${it.buyPrice.toLocaleString()}</div>
+        <button class="btn sm" data-buy="${it.id}" ${money < it.buyPrice ? 'disabled' : ''}>Buy</button>
+      </div>
+    </div>`;
+}
 function renderItems() {
   const me = state.me;
+  const grouped = {};
+  for (const b of SHOP_BUCKETS) grouped[b.id] = [];
+  for (const it of state.shop.stock) grouped[shopBucket(it.category)].push(it);
   return `
     <div class="panel">
       <div class="panel-title">Shop · ${cityFlag(me.location)} ${escapeHtml(cityName(me.location))}</div>
       ${state.shop.stock.length === 0
         ? '<div class="muted">Nothing for sale here.</div>'
-        : `<div class="item-list">
-          ${state.shop.stock.map(it => `
-            <div class="item-row">
-              <div class="item-icon ${it.category}">${itemIcon(it.category)}</div>
-              <div class="info">
-                <div class="row" style="gap:8px;"><b>${escapeHtml(it.name)}</b> <span class="cat-${it.category}">${it.category.toUpperCase()}</span></div>
-                <div class="muted small">${escapeHtml(it.description)}</div>
-                ${it.attackPower ? `<div class="small" style="color:var(--neon-pink)">+${it.attackPower} ATK</div>` : ''}
-                ${it.defensePower ? `<div class="small" style="color:var(--neon-purple)">+${it.defensePower} DEF</div>` : ''}
-                ${it.effect ? `<div class="small" style="color:var(--neon-green)">+${it.effect.amount} ${it.effect.stat.toUpperCase()}</div>` : ''}
-              </div>
-              <div style="text-align:right;">
-                <div style="color:var(--neon-green); font-family: 'Orbitron'; font-weight:700;">$${it.buyPrice.toLocaleString()}</div>
-                <button class="btn sm" data-buy="${it.id}" ${me.money < it.buyPrice ? 'disabled' : ''}>Buy</button>
-              </div>
+        : SHOP_BUCKETS.map(b => grouped[b.id].length === 0 ? "" : `
+            <div class="shop-section">
+              <div class="shop-section-head"><span class="shop-section-icon">${b.icon}</span><span>${b.label}</span><span class="muted small">${grouped[b.id].length} items</span></div>
+              <div class="item-list">${grouped[b.id].map(it => shopItemHtml(it, me.money)).join("")}</div>
             </div>
-          `).join("")}
-        </div>`
+          `).join("")
       }
+      <div class="muted small" style="margin-top:10px;">Looking for what you've already bought? Head to the <b>Inventory</b> tab.</div>
     </div>
+  `;
+}
 
+// --- INVENTORY (own page) ---
+async function loadInventoryTab() {
+  try {
+    const [shop, inv] = await Promise.all([api.shop(), api.inventory()]);
+    state.shop = shop;
+    state.inventory = inv.inventory;
+  } catch {}
+}
+const INV_BUCKETS = [
+  { id: "fight",   label: "Weapons & Armor",  icon: "⚔️" },
+  { id: "medical", label: "Medical",          icon: "💊" },
+  { id: "utility", label: "Utility / Bank",   icon: "📦" },
+];
+function inventoryItemHtml(r) {
+  const it = r.item;
+  if (!it) return "";
+  const sellPrice = state.shop.stock.find(s => s.id === it.id)?.sellPrice
+    ?? Math.floor((it.basePrice || 0) * 0.5);
+  const equipped = state.gear.weapon?.id === it.id || state.gear.armor?.id === it.id;
+  return `
+    <div class="item-row">
+      <div class="item-icon ${it.category}">${itemIcon(it.category)}</div>
+      <div class="info">
+        <div class="row" style="gap:8px;">
+          <b>${escapeHtml(it.name)}</b>
+          <span class="cat-${it.category}">${it.category.toUpperCase()}</span>
+          <span class="muted">×${r.quantity}</span>
+          ${equipped ? '<span class="role-tag admin" style="background:var(--neon-green); color:#000;">EQUIPPED</span>' : ''}
+        </div>
+        <div class="muted small">${escapeHtml(it.description)}</div>
+        ${it.attackPower ? `<div class="small" style="color:var(--neon-pink)">+${it.attackPower} ATK</div>` : ''}
+        ${it.defensePower ? `<div class="small" style="color:var(--neon-purple)">+${it.defensePower} DEF</div>` : ''}
+        ${it.effect ? `<div class="small" style="color:var(--neon-green)">+${it.effect.amount} ${it.effect.stat.toUpperCase()}</div>` : ''}
+        <div class="muted small" style="margin-top:4px; font-family:'Share Tech Mono',monospace;">id: ${escapeHtml(it.id)}</div>
+      </div>
+      <div style="text-align:right; display:flex; flex-direction:column; gap:4px;">
+        ${it.category === 'consumable' ? `<button class="btn green sm" data-use="${it.id}">Use</button>` : ''}
+        <button class="btn ghost sm" data-sell="${it.id}">Sell $${sellPrice.toLocaleString()}</button>
+      </div>
+    </div>`;
+}
+function renderInventory() {
+  const grouped = { fight: [], medical: [], utility: [] };
+  for (const r of state.inventory) {
+    if (!r.item) continue;
+    grouped[shopBucket(r.item.category)].push(r);
+  }
+  const total = state.inventory.length;
+  return `
     <div class="panel">
-      <div class="panel-title">Your Inventory</div>
-      ${state.inventory.length === 0
-        ? '<div class="muted">Empty. Buy something.</div>'
-        : `<div class="item-list">
-          ${state.inventory.map(r => {
-            const it = r.item;
-            if (!it) return '';
-            const sellPrice = state.shop.stock.find(s => s.id === it.id)?.sellPrice
-              ?? Math.floor((it.basePrice || 0) * 0.5);
-            return `
-              <div class="item-row">
-                <div class="item-icon ${it.category}">${itemIcon(it.category)}</div>
-                <div class="info">
-                  <div class="row" style="gap:8px;"><b>${escapeHtml(it.name)}</b> <span class="cat-${it.category}">${it.category.toUpperCase()}</span> <span class="muted">×${r.quantity}</span></div>
-                  <div class="muted small">${escapeHtml(it.description)}</div>
-                  ${it.attackPower ? `<div class="small" style="color:var(--neon-pink)">+${it.attackPower} ATK</div>` : ''}
-                  ${it.defensePower ? `<div class="small" style="color:var(--neon-purple)">+${it.defensePower} DEF</div>` : ''}
-                  ${it.effect ? `<div class="small" style="color:var(--neon-green)">+${it.effect.amount} ${it.effect.stat.toUpperCase()}</div>` : ''}
-                </div>
-                <div style="text-align:right; display:flex; flex-direction:column; gap:4px;">
-                  ${it.category === 'consumable' ? `<button class="btn green sm" data-use="${it.id}">Use</button>` : ''}
-                  <button class="btn ghost sm" data-sell="${it.id}">Sell $${sellPrice.toLocaleString()}</button>
-                </div>
-              </div>
-            `;
-          }).join("")}
-        </div>`
+      <div class="panel-title">Inventory <span class="spacer"></span><span class="muted small">${total} stack${total === 1 ? "" : "s"}</span></div>
+      ${total === 0
+        ? '<div class="muted" style="text-align:center; padding:20px;">Empty. Visit the Shop or earn drops from missions.</div>'
+        : INV_BUCKETS.map(b => grouped[b.id].length === 0 ? "" : `
+            <div class="shop-section">
+              <div class="shop-section-head"><span class="shop-section-icon">${b.icon}</span><span>${b.label}</span><span class="muted small">${grouped[b.id].length}</span></div>
+              <div class="item-list">${grouped[b.id].map(inventoryItemHtml).join("")}</div>
+            </div>
+          `).join("")
       }
     </div>
   `;
@@ -1147,6 +1221,8 @@ function renderMyProfile() {
       </div>
     </div>
 
+    ${securityPanelHtml()}
+
     <div class="panel">
       <div class="panel-title">Career Stats</div>
       <div class="stats-grid">
@@ -1161,6 +1237,7 @@ function renderMyProfile() {
   `;
 }
 function setupMyProfileHandlers() {
+  setupSecurityHandlers();
   app.querySelectorAll("[data-avatar]").forEach(el => {
     el.onclick = async () => {
       try {
@@ -1426,8 +1503,12 @@ async function loadTabData(tab) {
   else if (tab === "jobs" && state.jobs.length === 0) await loadJobs();
   else if (tab === "missions") await loadMissions();
   else if (tab === "items") await loadItemsTab();
+  else if (tab === "inventory") await loadInventoryTab();
   else if (tab === "trade") await loadTradeTab();
+  else if (tab === "bank") await loadBankTab();
+  else if (tab === "events") await loadEventsTab();
   else if (tab === "admin") await loadAdminTab();
+  else if (tab === "home") await refreshDaily();
   else if (tab === "players") {
     try { state.players = (await api.players()).players; } catch {}
   }
@@ -1443,7 +1524,10 @@ function render() {
   else if (state.tab === "missions") body = renderMissions();
   else if (state.tab === "travel") body = renderTravel();
   else if (state.tab === "items") body = renderItems();
+  else if (state.tab === "inventory") body = renderInventory();
   else if (state.tab === "trade") body = renderTrade();
+  else if (state.tab === "bank") body = renderBank();
+  else if (state.tab === "events") body = renderEvents();
   else if (state.tab === "helper") body = renderHelper();
   else if (state.tab === "chat") body = renderChat();
   else if (state.tab === "players") body = renderPlayers();
@@ -1471,6 +1555,11 @@ function render() {
       el.onclick = async () => { state.tab = el.dataset.go; await loadTabData(state.tab); render(); };
     });
     app.querySelectorAll("[data-act]").forEach(el => { el.onclick = () => doSimpleAction(el.dataset.act); });
+    document.getElementById("claim-daily-btn")?.addEventListener("click", claimDaily);
+  } else if (state.tab === "bank") {
+    setupBankHandlers();
+  } else if (state.tab === "events") {
+    document.getElementById("refresh-events")?.addEventListener("click", async () => { await loadEventsTab(); render(); });
   } else if (state.tab === "crimes") {
     app.querySelectorAll("[data-crime]").forEach(el => { el.onclick = () => doCrime(el.dataset.crime); });
   } else if (state.tab === "gym") {
@@ -1486,6 +1575,7 @@ function render() {
     app.querySelectorAll("[data-travel]").forEach(el => { el.onclick = () => doTravel(el.dataset.travel); });
   } else if (state.tab === "items") {
     app.querySelectorAll("[data-buy]").forEach(el => { el.onclick = () => doBuy(el.dataset.buy); });
+  } else if (state.tab === "inventory") {
     app.querySelectorAll("[data-sell]").forEach(el => { el.onclick = () => doSell(el.dataset.sell); });
     app.querySelectorAll("[data-use]").forEach(el => { el.onclick = () => doUse(el.dataset.use); });
   } else if (state.tab === "trade") {
@@ -1503,6 +1593,245 @@ function render() {
   } else if (state.tab === "admin") {
     setupAdminHandlers();
   }
+}
+
+// ============================================================
+// DAILY REWARD CARD (home tab)
+// ============================================================
+function dailyCardHtml() {
+  const d = state.daily;
+  if (!d) return "";
+  if (d.ready) {
+    const next = (d.streak || 0) + 1;
+    const reward = 200 + Math.min(30, next) * 50;
+    return `
+      <div class="panel" style="border:1px solid var(--neon-yellow);">
+        <div class="panel-title">⭐ Daily Reward Ready</div>
+        <div class="muted small" style="margin-bottom:10px;">Streak: <b>${d.streak}</b> · Next claim worth <b style="color:var(--neon-yellow)">$${reward}</b> + XP + energy.</div>
+        <button class="btn yellow" id="claim-daily-btn">Claim Reward</button>
+      </div>`;
+  }
+  const next = d.nextAt ? new Date(d.nextAt) : null;
+  return `
+    <div class="panel">
+      <div class="panel-title">Daily Reward</div>
+      <div class="muted small">Streak: <b>${d.streak}</b>. Next claim available at <b>${next ? next.toLocaleString() : "?"}</b>.</div>
+    </div>`;
+}
+
+async function refreshDaily() { try { state.daily = await api.dailyStatus(); } catch {} }
+async function claimDaily() {
+  try {
+    const r = await api.dailyClaim();
+    state.me = r.user;
+    showToast(`Daily claimed: +$${r.rewards.money} (streak ${r.rewards.streak})`, "success");
+    pushLog(`Daily reward claimed (streak ${r.rewards.streak}): +$${r.rewards.money}, +${r.rewards.xp} XP.`, "reward");
+    await refreshDaily();
+    render();
+  } catch (e) { showToast(e.message, "fail"); }
+}
+
+// ============================================================
+// BANK TAB
+// ============================================================
+async function loadBankTab() {
+  try { state.bank = await api.bank(); } catch (e) { showToast(e.message, "fail"); }
+}
+
+function renderBank() {
+  const b = state.bank;
+  if (!b) return `<div class="panel"><div class="muted">Loading bank…</div></div>`;
+  const now = Date.now();
+  return `
+    <div class="panel">
+      <div class="panel-title">🏦 Neo-Torin Federal Bank</div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-label">Wallet</div><div class="stat-value money">$${b.walletMoney.toLocaleString()}</div></div>
+        <div class="stat"><div class="stat-label">In Bank</div><div class="stat-value level">$${b.bankBalance.toLocaleString()}</div></div>
+        <div class="stat"><div class="stat-label">Active Deposits</div><div class="stat-value">${b.deposits.length}</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Park / Withdraw (no interest, no lock)</div>
+      <div class="muted small" style="margin-bottom:10px;">Keep cash safe — attackers can only steal from your wallet.</div>
+      <div class="row" style="gap:10px; flex-wrap:wrap; align-items:center;">
+        <input class="input" id="bank-park-amt" type="number" min="1" placeholder="Amount" style="width:160px;" />
+        <button class="btn green sm" id="bank-park-btn">Deposit</button>
+        <button class="btn ghost sm" id="bank-unpark-btn">Withdraw</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Term Deposits (locked, with interest)</div>
+      <div class="muted small" style="margin-bottom:10px;">Min $100. Money is locked until maturity, then withdraw to claim principal + interest.</div>
+      <div class="row" style="gap:10px; flex-wrap:wrap; align-items:center;">
+        <input class="input" id="bank-dep-amt" type="number" min="100" placeholder="Amount ($100+)" style="width:170px;" />
+        <select class="input" id="bank-dep-days" style="width:200px;">
+          ${b.terms.map(t => `<option value="${t.durationDays}">${t.durationDays} day${t.durationDays===1?"":"s"} · +${(t.rate*100).toFixed(0)}%</option>`).join("")}
+        </select>
+        <button class="btn cyan sm" id="bank-deposit-btn">Lock In</button>
+      </div>
+
+      <div style="margin-top:16px;">
+        ${b.deposits.length === 0
+          ? '<div class="muted small">No active deposits.</div>'
+          : `<table class="data-table"><thead><tr><th>Amount</th><th>Term</th><th>Rate</th><th>Matures</th><th>Status</th></tr></thead><tbody>
+              ${b.deposits.map(d => {
+                const matures = new Date(d.maturesAt).getTime();
+                const ready = matures <= now;
+                const payout = d.amount + Math.round(d.amount * d.interestRate);
+                return `<tr>
+                  <td>$${d.amount.toLocaleString()}</td>
+                  <td>${d.durationDays}d</td>
+                  <td>+${(d.interestRate * 100).toFixed(0)}%</td>
+                  <td>${new Date(d.maturesAt).toLocaleString()}</td>
+                  <td>${ready
+                    ? `<button class="btn green sm" data-withdraw="${d.id}">Withdraw $${payout.toLocaleString()}</button>`
+                    : `<span class="muted small">${humanizeMs(matures - now)} remaining</span>`}</td>
+                </tr>`;
+              }).join("")}
+            </tbody></table>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function humanizeMs(ms) {
+  if (ms <= 0) return "ready";
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function setupBankHandlers() {
+  document.getElementById("bank-park-btn")?.addEventListener("click", async () => {
+    const amount = Math.floor(Number(document.getElementById("bank-park-amt").value) || 0);
+    try { const r = await api.bankPark(amount); state.me = r.user; showToast(r.message, "success"); await loadBankTab(); render(); }
+    catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("bank-unpark-btn")?.addEventListener("click", async () => {
+    const amount = Math.floor(Number(document.getElementById("bank-park-amt").value) || 0);
+    try { const r = await api.bankUnpark(amount); state.me = r.user; showToast(r.message, "success"); await loadBankTab(); render(); }
+    catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("bank-deposit-btn")?.addEventListener("click", async () => {
+    const amount = Math.floor(Number(document.getElementById("bank-dep-amt").value) || 0);
+    const days = Math.floor(Number(document.getElementById("bank-dep-days").value) || 0);
+    try {
+      const r = await api.bankDeposit(amount, days);
+      showToast(r.message, "success");
+      // Refresh wallet via /me
+      try { const me = await api.me(); state.me = me.user; } catch {}
+      await loadBankTab(); render();
+    } catch (e) { showToast(e.message, "fail"); }
+  });
+  app.querySelectorAll("[data-withdraw]").forEach(el => {
+    el.onclick = async () => {
+      try {
+        const r = await api.bankWithdraw(el.dataset.withdraw);
+        state.me = r.user;
+        showToast(`Withdrew $${r.payout.toLocaleString()}`, "success");
+        pushLog(`Bank deposit matured: +$${r.payout.toLocaleString()}.`, "reward");
+        await loadBankTab(); render();
+      } catch (e) { showToast(e.message, "fail"); }
+    };
+  });
+}
+
+// ============================================================
+// EVENT LOG TAB
+// ============================================================
+async function loadEventsTab() {
+  try { state.events = (await api.events(100)).events; } catch (e) { showToast(e.message, "fail"); }
+}
+
+function renderEvents() {
+  const ev = state.events || [];
+  const kindColor = { attack: "pink", money_in: "green", money_out: "yellow", levelup: "cyan", daily: "yellow", bank: "cyan", trade: "purple", mission: "green", shop: "", system: "" };
+  return `
+    <div class="panel">
+      <div class="panel-title">📜 Event Log
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="refresh-events">Refresh</button>
+      </div>
+      <div class="muted small" style="margin-bottom:10px;">Server-side history of important things that happened to you.</div>
+      ${ev.length === 0
+        ? '<div class="muted">No events yet. Go play.</div>'
+        : `<div class="log" style="max-height:none;">
+            ${ev.map(e => `
+              <div class="log-entry ${kindColor[e.kind] || ""}">
+                <span class="muted small">[${new Date(e.createdAt).toLocaleString()}]</span>
+                <b style="margin:0 6px;">${e.kind}</b>
+                ${escapeHtml(e.text)}
+              </div>`).join("")}
+          </div>`}
+    </div>
+  `;
+}
+
+// ============================================================
+// ACCOUNT SECURITY (rendered inside profile tab via injection)
+// ============================================================
+function securityPanelHtml() {
+  const me = state.me;
+  const isDev = me.role === "dev";
+  return `
+    <div class="panel">
+      <div class="panel-title">🔐 Account Security</div>
+      <div style="margin-top:8px;">
+        <label class="label">Change Password</label>
+        <div class="row" style="gap:8px; flex-wrap:wrap;">
+          <input class="input" id="pw-old" type="password" placeholder="Current password" autocomplete="current-password" style="flex:1; min-width:160px;" />
+          <input class="input" id="pw-new" type="password" placeholder="New password" autocomplete="new-password" style="flex:1; min-width:160px;" />
+          <button class="btn cyan sm" id="pw-save">Update Password</button>
+        </div>
+        <div class="muted small" style="margin-top:6px;">Updating your password signs out all other sessions.</div>
+      </div>
+
+      ${isDev ? `<div class="muted small" style="margin-top:14px;">Developer accounts cannot self-delete.</div>` : `
+      <div style="margin-top:18px; padding-top:14px; border-top: 1px solid var(--bg-3);">
+        <label class="label" style="color:var(--neon-pink);">Delete Account</label>
+        <div class="muted small" style="margin-bottom:8px;">You'll be logged out immediately. The account is permanently deleted in <b>60 minutes</b> unless you log back in within that window to cancel.</div>
+        <div class="row" style="gap:8px; flex-wrap:wrap;">
+          <input class="input" id="del-pw" type="password" placeholder="Confirm password" autocomplete="current-password" style="flex:1; min-width:160px;" />
+          <button class="btn pink sm" id="del-account-btn">Delete My Account</button>
+        </div>
+      </div>`}
+    </div>
+  `;
+}
+
+function setupSecurityHandlers() {
+  document.getElementById("pw-save")?.addEventListener("click", async () => {
+    const oldPw = document.getElementById("pw-old").value;
+    const newPw = document.getElementById("pw-new").value;
+    if (!oldPw || !newPw) { showToast("Fill in both password fields.", "fail"); return; }
+    try {
+      const r = await api.changePassword(oldPw, newPw);
+      setToken(r.user.token);
+      state.me = r.user;
+      showToast(r.message, "success");
+      render();
+    } catch (e) { showToast(e.message, "fail"); }
+  });
+  document.getElementById("del-account-btn")?.addEventListener("click", async () => {
+    const pw = document.getElementById("del-pw").value;
+    if (!pw) { showToast("Confirm with your password.", "fail"); return; }
+    if (!confirm("Really delete your account? You will be signed out immediately. Sign in again within 60 minutes to cancel.")) return;
+    try {
+      const r = await api.deleteAccount(pw);
+      showToast(r.message, "info");
+      setToken(""); disconnectWs();
+      state.me = null; state.log = [];
+      render();
+    } catch (e) { showToast(e.message, "fail"); }
+  });
 }
 
 boot();

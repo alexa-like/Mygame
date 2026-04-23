@@ -817,3 +817,43 @@ h1, h2, h3 {
   .admin-row { grid-template-columns: 1fr 1fr; font-size: 12px; }
   .admin-row.head { display: none; }
 }
+
+/* Shop / Inventory categorized sections */
+.shop-section { margin-bottom: 18px; }
+.shop-section-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-3);
+  border-left: 3px solid var(--neon-cyan);
+  border-radius: 4px 4px 0 0;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1.2px;
+  color: var(--text-1);
+  margin-bottom: 6px;
+}
+.shop-section:nth-child(2) .shop-section-head { border-left-color: var(--neon-pink); }
+.shop-section:nth-child(3) .shop-section-head { border-left-color: var(--neon-green); }
+.shop-section:nth-child(4) .shop-section-head { border-left-color: var(--neon-yellow); }
+.shop-section-icon { font-size: 18px; }
+
+/* Data tables (Bank deposits, etc.) */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table th, .data-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--bg-3);
+}
+.data-table th {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+.data-table tr:last-child td { border-bottom: none; }

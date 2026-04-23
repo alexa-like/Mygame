@@ -74,7 +74,8 @@ router.post("/jobs/:id", authMiddleware, async (req: AuthedRequest, res) => {
 });
 
 router.post("/gym/:stat", authMiddleware, async (req: AuthedRequest, res) => {
-  const r = await doGym(req.user!, req.params.stat as any);
+  const sets = Number(req.body?.sets ?? req.query?.sets ?? 1);
+  const r = await doGym(req.user!, req.params.stat as any, sets);
   actionResponse(res, r);
 });
 

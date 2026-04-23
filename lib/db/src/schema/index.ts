@@ -46,6 +46,16 @@ export const usersTable = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastSeen: timestamp("last_seen", { withTimezone: true }).notNull().defaultNow(),
   lastRegenAt: timestamp("last_regen_at", { withTimezone: true }).notNull().defaultNow(),
+
+  // Self-delete grace period (60 min). When set, user is logged out; if not undone in time, account is purged.
+  pendingDeleteAt: timestamp("pending_delete_at", { withTimezone: true }),
+
+  // Daily reward streak
+  lastDailyClaimAt: timestamp("last_daily_claim_at", { withTimezone: true }),
+  dailyStreak: integer("daily_streak").notNull().default(0),
+
+  // Soft-bank balance (interest-bearing deposits live in bank_deposits)
+  bankBalance: integer("bank_balance").notNull().default(0),
 });
 
 export type User = typeof usersTable.$inferSelect;
@@ -125,3 +135,28 @@ export const missionsTable = pgTable("missions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type MissionRow = typeof missionsTable.$inferSelect;
+
+// Bank deposits (term deposits with interest)
+export const bankDepositsTable = pgTable("bank_deposits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  durationDays: integer("duration_days").notNull(), // 1 | 7 | 30
+  interestRate: real("interest_rate").notNull(),    // e.g. 0.02 / 0.08 / 0.25
+  depositedAt: timestamp("deposited_at", { withTimezone: true }).notNull().defaultNow(),
+  maturesAt: timestamp("matures_at", { withTimezone: true }).notNull(),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+});
+export type BankDeposit = typeof bankDepositsTable.$inferSelect;
+
+// Player-facing event log (works offline; stored server-side)
+export const eventsTable = pgTable("events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // attack | money_in | money_out | levelup | daily | bank | trade | mission
+  text: text("text").notNull(),
+  amount: integer("amount").notNull().default(0),
+  meta: jsonb("meta").notNull().default("{}"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type EventRow = typeof eventsTable.$inferSelect;

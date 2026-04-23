@@ -25,6 +25,7 @@ export async function authMiddleware(req: AuthedRequest, res: Response, next: Ne
   const rows = await db.select().from(usersTable).where(eq(usersTable.token, token)).limit(1);
   let user = rows[0];
   if (!user) return res.status(401).json({ error: "Invalid token" });
+  if (user.pendingDeleteAt) return res.status(403).json({ error: "Account is pending deletion. Log in again to cancel." });
 
   const regenned = applyRegen(user);
   if (regenned !== user) {

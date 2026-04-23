@@ -180,7 +180,7 @@ export async function doCrime(user: User, crimeId: string): Promise<ActionResult
 export type BattleStat = "strength" | "defense" | "speed" | "dexterity";
 const STAT_LABEL: Record<BattleStat, string> = { strength: "Strength", defense: "Defense", speed: "Speed", dexterity: "Dexterity" };
 
-export async function doGym(user: User, stat: BattleStat): Promise<ActionResult> {
+export async function doGym(user: User, stat: BattleStat, sets = 1): Promise<ActionResult> {
   const block = requireFree(user);
   if (block.error) return { user, message: block.error, type: "fail", leveled: false };
   if (!["strength", "defense", "speed", "dexterity"].includes(stat)) {
@@ -188,29 +188,40 @@ export async function doGym(user: User, stat: BattleStat): Promise<ActionResult>
   }
   const eCost = 5;
   const hCost = 5;
-  if (user.energy < eCost) return { user, message: `Need ${eCost} energy.`, type: "fail", leveled: false };
-  if (user.happy < 1) return { user, message: "You're too unhappy to focus. Buy a Mood Pill.", type: "fail", leveled: false };
+  const requested = Math.max(1, Math.min(20, Math.floor(Number(sets) || 1)));
+  // Cap by what the user can afford in energy/happy.
+  const maxByEnergy = Math.floor(user.energy / eCost);
+  const maxByHappy = Math.max(0, Math.floor(user.happy / Math.max(1, hCost)));
+  const reps = Math.max(0, Math.min(requested, maxByEnergy, maxByHappy));
+  if (reps <= 0) {
+    if (maxByEnergy <= 0) return { user, message: `Need ${eCost} energy.`, type: "fail", leveled: false };
+    return { user, message: "You're too unhappy to focus. Buy a Mood Pill.", type: "fail", leveled: false };
+  }
 
-  // Gain scales with happy (happiness multiplier 0.5 -> 2.0) and inversely with current stat (diminishing returns)
-  const happyMul = 0.5 + (user.happy / user.maxHappy) * 1.5;
-  const cur = (user as any)[stat] as number;
-  const diminish = Math.max(0.4, 1 - (cur - 10) * 0.005);
-  const baseGain = 0.6 + Math.random() * 0.8;
-  const gain = Math.max(1, Math.round(baseGain * happyMul * diminish * 10) / 10);
-
-  let u = { ...user, energy: user.energy - eCost, happy: clamp(user.happy - hCost, 0, user.maxHappy) };
-  (u as any)[stat] = Math.round((cur + gain) * 10) / 10;
-  // Small XP for working out
-  u.xp += 1;
+  let totalGain = 0;
+  let u = { ...user };
+  for (let i = 0; i < reps; i++) {
+    const happyMul = 0.5 + (u.happy / u.maxHappy) * 1.5;
+    const cur = (u as any)[stat] as number;
+    const diminish = Math.max(0.4, 1 - (cur - 10) * 0.005);
+    const baseGain = 0.6 + Math.random() * 0.8;
+    const gain = Math.max(0.1, Math.round(baseGain * happyMul * diminish * 10) / 10);
+    (u as any)[stat] = Math.round((cur + gain) * 10) / 10;
+    u.energy -= eCost;
+    u.happy = clamp(u.happy - hCost, 0, u.maxHappy);
+    u.xp += 1;
+    totalGain += gain;
+  }
+  totalGain = Math.round(totalGain * 10) / 10;
   const before = u.level;
   u = applyLevelUps(u);
   await persist(u);
   return {
     user: u,
-    message: `Trained ${STAT_LABEL[stat]} +${gain}.`,
+    message: `Trained ${STAT_LABEL[stat]} +${totalGain} over ${reps} set${reps === 1 ? "" : "s"}.`,
     type: "reward",
     leveled: u.level > before,
-    detail: { stat, gain },
+    detail: { stat, gain: totalGain, sets: reps },
   };
 }
 

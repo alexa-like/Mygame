@@ -8,6 +8,9 @@ import chatRouter from "./chat";
 import tradeRouter from "./trade";
 import adminRouter from "./admin";
 import aiRouter from "./ai";
+import bankRouter from "./bank";
+import dailyRouter from "./daily";
+import eventsRouter from "./events";
 
 const router: IRouter = Router();
 
@@ -20,5 +23,8 @@ router.use(chatRouter);
 router.use(tradeRouter);
 router.use(adminRouter);
 router.use(aiRouter);
+router.use(bankRouter);
+router.use(dailyRouter);
+router.use(eventsRouter);
 
 export default router;

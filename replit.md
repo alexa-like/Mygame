@@ -8,7 +8,22 @@ A multiplayer browser-based cyberpunk text RPG with Torn-style mechanics.
 - **DB** (`lib/db`): Postgres via Drizzle. Schema in `lib/db/src/schema/index.ts`.
 
 ## Auth
-Username + 4-8 digit PIN. sha256+salt hash, bearer token in `localStorage`, sent as `Authorization: Bearer <token>` for HTTP and `{kind:"auth",token}` over WS.
+Username + password (4-32 chars, letters/digits/symbols). sha256+salt hash, bearer token in `localStorage`, sent as `Authorization: Bearer <token>` for HTTP and `{kind:"auth",token}` over WS.
+
+- `POST /api/auth/change-password` — requires old password, rotates token (logs out other sessions).
+- `POST /api/auth/delete-account` — schedules account purge in 60 min, immediately logs out all sessions; logging back in within 60 min cancels it. Sweeper runs every 5 min server-side. Dev role cannot self-delete.
+- **Seeded dev account**: `Alexa_Ola` / `Hayatulahi3222` is auto-created on every server boot with role `dev`. Username is reserved.
+
+## Bank (`/api/bank*`)
+Two products in one tab:
+1. **Park / Unpark** (`/bank/park`, `/bank/unpark`) — instant, 0% interest. Uses `users.bankBalance`. Safe from PvP theft.
+2. **Term Deposits** (`bank_deposits` table) — locks money for 1d/7d/30d at +2% / +8% / +25%. Withdraw only after `maturesAt`.
+
+## Daily Reward (`/api/daily*`)
+24h cooldown, 48h streak window. `users.lastDailyClaimAt` + `users.dailyStreak`. Reward = $200 + 50×streak (capped 30) + 10+2×streak XP + 25 energy.
+
+## Event Log (`/api/events`)
+`events` table records important things (attack, money_in/out, levelup, daily, bank, trade, mission, shop, system) per user. Frontend tab shows latest 100.
 
 ## Game Mechanics (Torn-style)
 

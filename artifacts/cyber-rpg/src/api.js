@@ -33,7 +33,7 @@ export const api = {
   doCrime: (id) => http("POST", `/crimes/${id}`),
   jobs: () => http("GET", "/jobs"),
   doJob: (id) => http("POST", `/jobs/${id}`),
-  gym: (stat) => http("POST", `/gym/${stat}`),
+  gym: (stat, sets = 1) => http("POST", `/gym/${stat}`, { sets }),
   heal: () => http("POST", "/heal"),
   bustHospital: () => http("POST", "/hospital/bust"),
 
@@ -79,6 +79,24 @@ export const api = {
   adminPunish: (payload) => http("POST", "/admin/punish", payload),
   adminRole: (userId, role) => http("POST", "/admin/role", { userId, role }),
   adminDelete: (id) => http("DELETE", `/admin/users/${id}`),
+
+  // Auth lifecycle
+  changePassword: (oldPassword, newPassword) => http("POST", "/auth/change-password", { oldPassword, newPassword }),
+  deleteAccount: (password) => http("POST", "/auth/delete-account", { password }),
+
+  // Bank
+  bank: () => http("GET", "/bank"),
+  bankPark: (amount) => http("POST", "/bank/park", { amount }),
+  bankUnpark: (amount) => http("POST", "/bank/unpark", { amount }),
+  bankDeposit: (amount, durationDays) => http("POST", "/bank/deposit", { amount, durationDays }),
+  bankWithdraw: (id) => http("POST", "/bank/withdraw", { id }),
+
+  // Daily
+  dailyStatus: () => http("GET", "/daily"),
+  dailyClaim: () => http("POST", "/daily/claim"),
+
+  // Events log
+  events: (limit = 50) => http("GET", `/events?limit=${limit}`),
 };
 
 // --- WebSocket ---
