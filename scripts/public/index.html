@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Game</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #111;
+      color: white;
+      text-align: center;
+      padding-top: 50px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🎮 My Game is Live!</h1>
+
+  <p id="status">Loading backend...</p>
+
+  <button onclick="checkServer()">Check Server</button>
+
+  <script>
+    async function checkServer() {
+      const res = await fetch("/health");
+      const data = await res.json();
+      document.getElementById("status").innerText =
+        "Server Status: " + data.ok;
+    }
+  </script>
+</body>
+</html>
