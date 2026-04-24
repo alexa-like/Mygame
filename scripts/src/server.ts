@@ -4,14 +4,14 @@ const app = express();
 
 app.use(express.json());
 
-// ROOT TEST
+// ROOT ROUTE
 app.get("/", (_req, res) => {
-  res.send("Server is working 😎🔥");
+  res.send("Server is alive 😎🔥");
 });
 
-// HEALTH CHECK
+// TEST ROUTE
 app.get("/health", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ status: "ok" });
 });
 
 const PORT = process.env.PORT || 3000;
