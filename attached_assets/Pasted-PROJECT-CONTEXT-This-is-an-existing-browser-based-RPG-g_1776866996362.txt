@@ -1,0 +1,332 @@
+PROJECT CONTEXT
+
+This is an existing browser-based RPG game. DO NOT rebuild the project from scratch.
+
+Your task is to upgrade and extend the current system step-by-step without breaking existing features.
+
+Work in phases. After completing each section, ensure the app still runs before continuing.
+
+---
+
+PHASE 1: CORE REFACTOR
+
+Inventory System
+
+- Remove inventory from item/shop page
+- Create a dedicated Inventory page
+- Categorize items:
+  - Weapons
+  - Medical
+  - Utility/Bank
+- Allow item usage from inventory
+
+---
+
+Item Shop Update
+
+- Organize shop into categories:
+  - Fighting Equipment
+  - Medical
+  - Bank/Utility
+- Improve UI navigation
+
+---
+
+PHASE 2: COMBAT & HEALTH SYSTEM
+
+Combat (Attack Page)
+
+- Create attack page similar to Torn City
+- Show:
+  - Player health
+  - Opponent health
+- Damage based on stats
+
+Combat Mechanics
+
+- Stats:
+  
+  - Strength
+  - Defense
+  - Speed (dodge chance)
+  - Dexterity (accuracy/critical)
+
+- Damage formula:
+  
+  - Base damage = Strength
+  - Final damage = Base damage - (Defense / 2)
+  - Add ±10% randomness
+
+- Add:
+  
+  - Critical hits
+  - Dodge chance
+  - Combat log messages
+
+- Add attack cooldown (2–5 seconds)
+
+---
+
+Post-Fight Options
+
+- If player wins:
+  - Hospitalize opponent
+  - Mug opponent (steal random money)
+
+---
+
+Health & Hospital
+
+- Players have max health (increase with level)
+
+- Hospitalized players:
+  
+  - Cannot act
+  - Recover over time
+
+- Create Hospital page:
+  
+  - List hospitalized players
+  - Show remaining time
+
+- Allow healing using medical items
+
+---
+
+PHASE 3: PLAYER PROGRESSION
+
+Stats & Leveling
+
+- Level up increases:
+  - Max health
+  - Stat growth
+
+---
+
+Gym Update
+
+- Allow multiple training inputs (not +1 only)
+- Improve UI for selecting training amount
+
+---
+
+Energy System
+
+- Energy used for:
+  
+  - Attacks
+  - Gym
+
+- Regenerates over time
+
+- Max energy increases with level
+
+---
+
+PHASE 4: ACCOUNT & SECURITY
+
+Password System
+
+- Allow letters and numbers
+- Add change password feature:
+  - Require old password
+
+---
+
+Delete Account
+
+- Show warning: "⚠️ This action is permanent"
+- If confirmed:
+  - Log user out immediately
+  - Delete account after 60 minutes if not logged back in
+
+---
+
+Profile Page Update
+
+- Show:
+  - Account creation date
+  - Total days played
+
+---
+
+PHASE 5: ROLES & ADMIN SYSTEM
+
+Developer Account
+
+- Create predefined account:
+  
+  - Username: Alexa_Ola
+  - Password: Hayatulahi3222 (store hashed)
+
+- Assign role = developer automatically
+
+- Not creatable by normal users
+
+---
+
+Roles
+
+- player
+- admin
+- developer
+
+---
+
+Permissions
+
+Developer:
+
+- Full control over:
+  - Players
+  - Items
+  - Economy
+  - Game settings
+
+Admin:
+
+- Limited moderation powers
+
+---
+
+Role Tags
+
+- Show:
+  - [DEV]
+  - [ADMIN]
+- Visible in chat and profile
+
+---
+
+PHASE 6: DEVELOPER PANEL
+
+Access
+
+- Route: /dev
+- Only developer role can access
+
+---
+
+Features
+
+- Player Management:
+  
+  - Edit money, level, stats
+  - Add/remove items
+  - Ban players
+
+- Economy Control:
+  
+  - Adjust money
+  - Set bank interest
+
+- Item Management:
+  
+  - Create/edit/delete items
+
+- Game Logs:
+  
+  - View actions (attacks, logins, transfers)
+
+---
+
+Hidden Access
+
+- Do not show in navigation
+- Accessible via:
+  - /dev URL only
+
+---
+
+PHASE 7: ECONOMY SYSTEM
+
+Bank System
+
+- Players deposit money
+
+- Choose duration:
+  
+  - 1 day
+  - 7 days
+  - 30 days
+
+- Interest increases with duration
+
+- Prevent early withdrawal
+
+---
+
+PHASE 8: SOCIAL SYSTEMS
+
+Factions
+
+- Players can create/join factions
+- Add:
+  - Faction chat
+  - Roles (leader/member)
+  - Faction bonuses
+
+---
+
+Companies
+
+- Players can create companies using money
+- Players can work and earn salary
+- Owners earn profit
+
+---
+
+Chat System
+
+- Separate chats:
+  
+  - Global
+  - Faction
+  - Company
+
+- Add:
+  
+  - Timestamps
+  - Online indicator
+  - Anti-spam
+
+---
+
+PHASE 9: EVENTS & ENGAGEMENT
+
+Event Log Page
+
+- Track:
+  - Attacks
+  - Money received
+  - Level ups
+- Must work offline (stored logs)
+
+---
+
+Daily Rewards & Missions
+
+- Login rewards
+- Tasks:
+  - Fight
+  - Train
+- Add streak bonuses
+
+---
+
+Random Events
+
+- Chance-based:
+  - Find money
+  - Discover item
+  - Surprise attack
+
+---
+
+FINAL RULES
+
+- Do NOT break existing functionality
+- Do NOT rebuild entire project
+- Implement features incrementally
+- Keep UI simple and clean
+- Follow Torn City mechanics as inspiration only
