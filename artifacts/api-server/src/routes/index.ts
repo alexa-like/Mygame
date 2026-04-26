@@ -1,16 +1,17 @@
 import { Router, type IRouter } from "express";
-import healthRouter from "./health";
-import authRouter from "./auth";
-import meRouter from "./me";
-import playersRouter from "./players";
-import missionsRouter from "./missions";
-import chatRouter from "./chat";
-import tradeRouter from "./trade";
-import adminRouter from "./admin";
-import aiRouter from "./ai";
-import bankRouter from "./bank";
-import dailyRouter from "./daily";
-import eventsRouter from "./events";
+
+import { healthRouter } from "./health";
+import { authRouter } from "./auth";
+import { meRouter } from "./me";
+import { playersRouter } from "./players";
+import { missionsRouter } from "./missions";
+import { chatRouter } from "./chat";
+import { tradeRouter } from "./trade";
+import { adminRouter } from "./admin";
+import { aiRouter } from "./ai";
+import { bankRouter } from "./bank";
+import { dailyRouter } from "./daily";
+import { eventsRouter } from "./events";
 
 const router: IRouter = Router();
 
