@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, inventoryTable, tradesTable, transfersTable, attacksTable, missionsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { authMiddleware, adminOnly, devOnly, type AuthedRequest, adminView } from "../lib/auth";
 import { itemById } from "../lib/catalog";
 
@@ -46,12 +46,32 @@ router.post("/admin/grant", async (req: AuthedRequest, res) => {
   }
   if (itemId && itemById(String(itemId))) {
     const q = Math.max(1, Math.floor(Number(qty || 1)));
-    const ex = await db.select().from(inventoryTable).where(eq(inventoryTable.userId, r[0].id)).limit(50);
-    const existing = ex.find((e) => e.itemId === itemId);
+    const itemIdStr = String(itemId);
+    const ex = await db
+      .select()
+      .from(inventoryTable)
+      .where(
+        and(
+          eq(inventoryTable.userId, r[0].id),
+          eq(inventoryTable.itemId, itemIdStr),
+        ),
+      )
+      .limit(1);
+    const existing = ex[0];
     if (existing) {
-      await db.update(inventoryTable).set({ quantity: existing.quantity + q }).where(eq(inventoryTable.userId, r[0].id));
+      await db
+        .update(inventoryTable)
+        .set({ quantity: existing.quantity + q })
+        .where(
+          and(
+            eq(inventoryTable.userId, r[0].id),
+            eq(inventoryTable.itemId, itemIdStr),
+          ),
+        );
     } else {
-      await db.insert(inventoryTable).values({ userId: r[0].id, itemId: String(itemId), quantity: q });
+      await db
+        .insert(inventoryTable)
+        .values({ userId: r[0].id, itemId: itemIdStr, quantity: q });
     }
   }
   res.json({ ok: true, message: "Granted." });
