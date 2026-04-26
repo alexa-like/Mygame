@@ -1,35 +1,65 @@
-import http from "node:http";
-import app from "./app";
-import { logger } from "./lib/logger";
-import { setupWebSocket } from "./lib/wsServer";
-import { ensureDevAccount, sweepPendingDeletes } from "./lib/seed";
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import http from "http";
+import { WebSocketServer } from "ws";
 
-const rawPort = process.env["PORT"];
+const app = express();
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+// 🔥 Middleware
+app.use(cors({
+  origin: "*",
+  credentials: true
+}));
 
-const port = Number(rawPort);
+app.use(express.json());
+app.use(cookieParser());
 
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
+// 🧠 Basic test route
+app.get("/", (req, res) => {
+  res.json({
+    message: "🔥 API Server is running smoothly",
+    status: "OK",
+    time: new Date().toISOString()
+  });
+});
 
+// ❤️ Health check (Render uses this a lot)
+app.get("/health", (req, res) => {
+  res.json({ status: "healthy" });
+});
+
+// 🌍 Create HTTP server
 const server = http.createServer(app);
-setupWebSocket(server);
 
-server.listen(port, async () => {
-  logger.info({ port }, "Server listening (HTTP + WebSocket)");
-  try {
-    await ensureDevAccount();
-  } catch (err) {
-    logger.error({ err }, "Failed to seed dev account");
-  }
-  // Sweep pending self-deletes every 5 minutes.
-  setInterval(() => {
-    sweepPendingDeletes().catch((err) => logger.error({ err }, "Sweep failed"));
-  }, 5 * 60 * 1000);
+// ⚡ WebSocket setup (for your game real-time features)
+const wss = new WebSocketServer({ server });
+
+wss.on("connection", (ws) => {
+  console.log("⚡ Player connected");
+
+  ws.send(JSON.stringify({
+    type: "welcome",
+    message: "Welcome to game server 🎮🔥"
+  }));
+
+  ws.on("message", (msg) => {
+    console.log("📩:", msg.toString());
+
+    ws.send(JSON.stringify({
+      type: "echo",
+      data: msg.toString()
+    }));
+  });
+
+  ws.on("close", () => {
+    console.log("❌ Player disconnected");
+  });
+});
+
+// 🚀 Start server
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
