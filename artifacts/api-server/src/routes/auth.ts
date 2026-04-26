@@ -3,6 +3,8 @@ import { db, usersTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import {
   hashPin,
+  verifyPin,
+  isLegacyHash,
   generateToken,
   privateProfile,
   authMiddleware,
@@ -109,8 +111,18 @@ router.post("/auth/login", async (req, res) => {
     .limit(1);
   const user = rows[0];
   if (!user) return res.status(401).json({ error: "Invalid credentials." });
-  if (user.pinHash !== hashPin(pin)) {
+  if (!verifyPin(pin, user.pinHash)) {
     return res.status(401).json({ error: "Invalid credentials." });
+  }
+
+  // Transparently upgrade legacy SHA-256 hashes to scrypt on successful login.
+  if (isLegacyHash(user.pinHash)) {
+    const upgraded = hashPin(pin);
+    await db
+      .update(usersTable)
+      .set({ pinHash: upgraded })
+      .where(eq(usersTable.id, user.id));
+    user.pinHash = upgraded;
   }
 
   // Logging back in cancels a pending self-delete.
@@ -137,7 +149,7 @@ router.post(
     if (pwErr) return res.status(400).json({ error: pwErr });
 
     const u = req.user!;
-    if (u.pinHash !== hashPin(oldPassword)) {
+    if (!verifyPin(oldPassword, u.pinHash)) {
       return res.status(401).json({ error: "Old password is incorrect." });
     }
 
@@ -164,7 +176,7 @@ router.post(
     if (u.role === "dev") {
       return res.status(403).json({ error: "Dev accounts cannot self-delete." });
     }
-    if (u.pinHash !== hashPin(password)) {
+    if (!verifyPin(password, u.pinHash)) {
       return res.status(401).json({ error: "Password is incorrect." });
     }
 

@@ -4,8 +4,54 @@ import { eq } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { applyRegen, statusOf } from "./game";
 
+// Password hashing — uses scrypt (a slow, memory-hard KDF in node:crypto).
+// Format: "scrypt$<saltHex>$<hashHex>". Legacy SHA-256 hashes (64 hex chars,
+// no "$") are still recognized for verification so existing accounts keep
+// working, and they are transparently upgraded on next successful login.
+const SCRYPT_N = 16384;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEYLEN = 64;
+const LEGACY_SUFFIX = "::neon-streets";
+
+function legacySha256(pin: string): string {
+  return crypto.createHash("sha256").update(pin + LEGACY_SUFFIX).digest("hex");
+}
+
 export function hashPin(pin: string): string {
-  return crypto.createHash("sha256").update(pin + "::neon-streets").digest("hex");
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(pin, salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+  });
+  return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+
+export function verifyPin(pin: string, stored: string): boolean {
+  if (stored.startsWith("scrypt$")) {
+    const parts = stored.split("$");
+    if (parts.length !== 3) return false;
+    const salt = Buffer.from(parts[1]!, "hex");
+    const expected = Buffer.from(parts[2]!, "hex");
+    const actual = crypto.scryptSync(pin, salt, expected.length, {
+      N: SCRYPT_N,
+      r: SCRYPT_R,
+      p: SCRYPT_P,
+    });
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  }
+  // Legacy SHA-256 hash (64 hex chars). Constant-time compare.
+  if (stored.length === 64 && /^[0-9a-f]+$/i.test(stored)) {
+    const a = Buffer.from(stored, "hex");
+    const b = Buffer.from(legacySha256(pin), "hex");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+  return false;
+}
+
+export function isLegacyHash(stored: string): boolean {
+  return stored.length === 64 && /^[0-9a-f]+$/i.test(stored);
 }
 
 export function generateToken(): string {
