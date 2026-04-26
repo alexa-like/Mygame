@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { authMiddleware, type AuthedRequest, privateProfile } from "../lib/auth";
@@ -6,6 +6,7 @@ import {
   doJob, actHealPaid, doCrime, doGym, startTravel,
   buyItem, sellItem, useItem, attackPlayer, getInventory, bustHospital,
   bestGear,
+  type ActionResult, type BattleStat,
 } from "../lib/game";
 import { CRIMES, JOBS, CITIES, ITEMS, shopInventory, shopPriceFor, sellbackPriceFor, HOME_CITY } from "../lib/catalog";
 
@@ -38,7 +39,7 @@ router.patch("/me", authMiddleware, async (req: AuthedRequest, res) => {
   res.json({ user: privateProfile(updated[0]!) });
 });
 
-function actionResponse(res: any, r: any) {
+function actionResponse(res: Response, r: ActionResult) {
   res.json({
     user: privateProfile(r.user),
     message: r.message,
@@ -73,9 +74,15 @@ router.post("/jobs/:id", authMiddleware, async (req: AuthedRequest, res) => {
   actionResponse(res, r);
 });
 
+const BATTLE_STATS = new Set<BattleStat>(["strength", "defense", "speed", "dexterity"]);
+
 router.post("/gym/:stat", authMiddleware, async (req: AuthedRequest, res) => {
+  const stat = req.params.stat as BattleStat;
+  if (!BATTLE_STATS.has(stat)) {
+    return res.status(400).json({ error: "Unknown stat." });
+  }
   const sets = Number(req.body?.sets ?? req.query?.sets ?? 1);
-  const r = await doGym(req.user!, req.params.stat as any, sets);
+  const r = await doGym(req.user!, stat, sets);
   actionResponse(res, r);
 });
 

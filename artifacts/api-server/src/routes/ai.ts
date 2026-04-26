@@ -60,7 +60,7 @@ router.post("/ai/ask", authMiddleware, async (req: AuthedRequest, res) => {
     // Keep last 12 messages (6 turns)
     HISTORY.set(userId, newHistory.slice(-12));
     res.json({ answer: text });
-  } catch (e: any) {
+  } catch {
     res.status(500).json({ error: "Helper offline right now. Try again in a sec." });
   }
 });
