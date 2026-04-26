@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   hashPin,
   verifyPin,
@@ -74,12 +74,10 @@ router.post("/auth/register", async (req, res) => {
     return res.status(409).json({ error: "Username already taken." });
   }
 
-  // Auto-promote the very first registered (non-seeded) user to dev.
-  const countRows = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(usersTable);
-  const totalUsers = Number(countRows[0]?.n ?? 0);
-  const role = totalUsers === 0 ? "dev" : "player";
+  // All public registrations create a regular player. Dev/admin accounts must
+  // be provisioned out-of-band (via the env-gated seed in `lib/seed.ts` for
+  // local dev, or by an existing dev promoting a player via /admin/role).
+  const role = "player";
 
   const token = generateToken();
   const inserted = await db

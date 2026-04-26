@@ -43,8 +43,10 @@ export function setupWebSocket(server: Server) {
     const sendOnline = () => broadcastAll({ kind: "online", userIds: onlineUserIds() });
 
     ws.on("message", async (raw) => {
-      let msg: any;
-      try { msg = JSON.parse(raw.toString()); } catch { return; }
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw.toString()); } catch { return; }
+      if (!parsed || typeof parsed !== "object") return;
+      const msg = parsed as Record<string, unknown>;
 
       if (msg.kind === "auth") {
         const user = await userByToken(String(msg.token || ""));

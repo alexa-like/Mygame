@@ -15,7 +15,7 @@ import eventsRouter from "./events";
 
 const router: IRouter = Router();
 
-router.use("/health", healthRouter);
+router.use(healthRouter);
 router.use(authRouter);
 router.use(meRouter);
 router.use(playersRouter);

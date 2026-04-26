@@ -8,9 +8,12 @@ function normalizeItems(items: unknown): ItemEntry[] {
   if (!Array.isArray(items)) return [];
   const out: ItemEntry[] = [];
   for (const it of items) {
-    if (it && typeof it === "object" && typeof (it as any).itemId === "string") {
-      const qty = Math.floor(Number((it as any).quantity || 0));
-      if (qty > 0 && itemById((it as any).itemId)) out.push({ itemId: (it as any).itemId, quantity: qty });
+    if (!it || typeof it !== "object") continue;
+    const obj = it as { itemId?: unknown; quantity?: unknown };
+    if (typeof obj.itemId !== "string") continue;
+    const qty = Math.floor(Number(obj.quantity ?? 0));
+    if (qty > 0 && itemById(obj.itemId)) {
+      out.push({ itemId: obj.itemId, quantity: qty });
     }
   }
   // Merge duplicates
@@ -61,8 +64,8 @@ export async function createTrade(from: User, payload: { toUserId: string; offer
   const inserted = await db.insert(tradesTable).values({
     fromUserId: from.id,
     toUserId: payload.toUserId,
-    offerMoney, offerItems: offerItems as any,
-    wantMoney, wantItems: wantItems as any,
+    offerMoney, offerItems,
+    wantMoney, wantItems,
     message: String(payload.message || "").slice(0, 200),
   }).returning();
   return { ok: true, trade: inserted[0]! };
@@ -81,7 +84,9 @@ export async function listTradesFor(userId: string) {
   return { incoming, outgoing, history };
 }
 
-async function adjustInventory(tx: any, userId: string, itemId: string, delta: number) {
+type TxArg = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function adjustInventory(tx: TxArg, userId: string, itemId: string, delta: number) {
   const ex = await tx.select().from(inventoryTable).where(and(eq(inventoryTable.userId, userId), eq(inventoryTable.itemId, itemId))).limit(1);
   const cur = ex[0]?.quantity || 0;
   const next = cur + delta;
@@ -139,9 +144,10 @@ export async function acceptTrade(acceptor: User, tradeId: string): Promise<{ ok
 
       await tx.update(tradesTable).set({ status: "accepted", resolvedAt: new Date() }).where(eq(tradesTable.id, trade.id));
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     await db.update(tradesTable).set({ status: "rejected", resolvedAt: new Date() }).where(eq(tradesTable.id, trade.id));
-    return { error: e.message || "Trade failed." };
+    const message = e instanceof Error ? e.message : "Trade failed.";
+    return { error: message };
   }
   return { ok: true };
 }
