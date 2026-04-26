@@ -6,8 +6,9 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// ✅ FIX: call pinoHttp directly (NO .default)
 app.use(
-  pinoHttp.default({
+  pinoHttp({
     logger,
     serializers: {
       req(req: any) {
@@ -23,7 +24,7 @@ app.use(
         };
       },
     },
-  }),
+  })
 );
 
 app.use(cors());
